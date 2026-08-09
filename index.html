@@ -174,10 +174,11 @@ tr:hover td{background:#FFFBF3}
 .timer-chip{font-family:'Baloo 2';font-weight:700}
 
 @media print{
+  @page{ size: 58mm auto; margin: 0; }
   body.print-mode > *{display:none !important}
-  body.print-mode #printArea{display:block !important;position:fixed;top:0;left:0;width:100%;}
+  body.print-mode #printArea{display:block !important;position:fixed;top:0;left:0;width:58mm;margin:0;padding:2mm;}
 }
-#printArea{display:none;font-family:'Courier New',monospace;font-size:12px;padding:10px;width:280px}
+#printArea{display:none;font-family:'Courier New',monospace;font-size:11px;line-height:1.4;padding:10px;width:58mm}
 #printArea .center{text-align:center}
 #printArea hr{border:none;border-top:1px dashed #000}
 #printArea .row{display:flex;justify-content:space-between}
@@ -273,7 +274,7 @@ function playBeep(){
 }
 
 /* ============ STATE ============ */
-let DB = { products:[], bumbuOptions:[], toppingOptions:[], customers:[], rentals:[], transactions:[], staff:[], attendance:[] };
+let DB = { products:[], flavorGroups:null, ingredients:[], customers:[], rentals:[], transactions:[], staff:[], attendance:[], shifts:[], cashFlows:[] };
 let STATE = {
   session:null, // {username,name,role}
   tab:'kasir',
@@ -281,7 +282,8 @@ let STATE = {
   posCategory:'minuman',
   loginError:'',
   reportRange:'today',
-  modal:null, // {type:'customize'|'rental'|'checkout'|'receipt'|'staffForm'|'productForm', data:{}}
+  kasType:'out',
+  modal:null, // {type:'customize'|'rental'|'checkout'|'receipt'|'staffForm'|'productForm'|'customerForm'|'shiftOpen'|'shiftClose', data:{}}
 };
 
 function seedDefaults(){
@@ -291,33 +293,83 @@ function seedDefaults(){
     {username:'kasir2', password:'kasir123', name:'Bagas', role:'staff', hourlyRate:12000},
   ];
   DB.products = [
-    {id:uid('p'),name:'Es Teh Manis',category:'minuman',price:6000,cogs:2000,stock:80,unit:'gelas',emoji:'🧊'},
-    {id:uid('p'),name:'Es Jeruk',category:'minuman',price:8000,cogs:3000,stock:60,unit:'gelas',emoji:'🍊'},
-    {id:uid('p'),name:'Air Mineral',category:'minuman',price:5000,cogs:2500,stock:100,unit:'botol',emoji:'💧'},
-    {id:uid('p'),name:'Es Coklat',category:'minuman',price:10000,cogs:4000,stock:40,unit:'gelas',emoji:'🍫'},
-    {id:uid('p'),name:'Cimol Original',category:'cimol',price:12000,cogs:4500,stock:50,unit:'porsi',emoji:'🥟',customizable:true},
-    {id:uid('p'),name:'Cimol Isi Keju',category:'cimol',price:15000,cogs:6500,stock:40,unit:'porsi',emoji:'🧀',customizable:true},
-    {id:uid('p'),name:'Cilok Kuah',category:'cilok',price:12000,cogs:4500,stock:45,unit:'porsi',emoji:'🍡',customizable:true},
-    {id:uid('p'),name:'Cilok Bakar',category:'cilok',price:14000,cogs:5500,stock:35,unit:'porsi',emoji:'🔥',customizable:true},
-    {id:uid('p'),name:'Balon Karakter Kecil',category:'balon',price:15000,cogs:5000,stock:25,unit:'pcs',emoji:'🎈'},
-    {id:uid('p'),name:'Balon Karakter Sedang',category:'balon',price:25000,cogs:9000,stock:20,unit:'pcs',emoji:'🎈'},
-    {id:uid('p'),name:'Balon Karakter Besar',category:'balon',price:40000,cogs:15000,stock:12,unit:'pcs',emoji:'🎈'},
-    {id:uid('p'),name:'Sewa Tikar Piknik',category:'sewa',price:10000,cogs:1000,stock:8,unit:'tikar/jam',emoji:'🧺'},
+    {id:uid('p'),name:'Es Teh Manis',category:'minuman',price:6000,cogs:2000,stock:80,unit:'gelas'},
+    {id:uid('p'),name:'Es Jeruk',category:'minuman',price:8000,cogs:3000,stock:60,unit:'gelas'},
+    {id:uid('p'),name:'Air Mineral',category:'minuman',price:5000,cogs:2500,stock:100,unit:'botol'},
+    {id:uid('p'),name:'Es Coklat',category:'minuman',price:10000,cogs:4000,stock:40,unit:'gelas'},
+    {id:uid('p'),name:'Cimol Original',category:'cimol',price:12000,cogs:4500,stock:50,unit:'porsi',customizable:true},
+    {id:uid('p'),name:'Cimol Isi Keju',category:'cimol',price:15000,cogs:6500,stock:40,unit:'porsi',customizable:true},
+    {id:uid('p'),name:'Cilok Kuah',category:'cilok',price:12000,cogs:4500,stock:45,unit:'porsi',customizable:true},
+    {id:uid('p'),name:'Cilok Bakar',category:'cilok',price:14000,cogs:5500,stock:35,unit:'porsi',customizable:true},
+    {id:uid('p'),name:'Cuanki',category:'cuanki',price:14000,cogs:6000,stock:40,unit:'porsi',customizable:true},
+    {id:uid('p'),name:'Baso Aci (Baci)',category:'cuanki',price:13000,cogs:5500,stock:40,unit:'porsi',customizable:true},
+    {id:uid('p'),name:'Balon Karakter Kecil',category:'balon',price:15000,cogs:5000,stock:25,unit:'pcs'},
+    {id:uid('p'),name:'Balon Karakter Sedang',category:'balon',price:25000,cogs:9000,stock:20,unit:'pcs'},
+    {id:uid('p'),name:'Balon Karakter Besar',category:'balon',price:40000,cogs:15000,stock:12,unit:'pcs'},
+    {id:uid('p'),name:'Sewa Tikar Piknik',category:'sewa',price:10000,cogs:1000,stock:8,unit:'tikar/jam'},
   ];
-  DB.bumbuOptions = [
-    {id:uid('b'),name:'Pedas Manis',stock:200},
-    {id:uid('b'),name:'Original Gurih',stock:200},
-    {id:uid('b'),name:'Balado',stock:200},
-  ];
-  DB.toppingOptions = [
-    {id:uid('t'),name:'Keju Parut',price:3000,stock:100},
-    {id:uid('t'),name:'Sosis',price:4000,stock:100},
-    {id:uid('t'),name:'Extra Saos Sambal',price:1000,stock:150},
-  ];
+  DB.flavorGroups = defaultFlavorGroups();
+  DB.ingredients = defaultIngredients();
   DB.customers = [];
   DB.rentals = [];
   DB.transactions = [];
   DB.attendance = [];
+  DB.shifts = [];
+  DB.cashFlows = [];
+}
+
+function defaultFlavorGroups(){
+  return {
+    cimol: {
+      bumbuLabel:'Bumbu', bumbuMode:'single', sauceExtraFee:0,
+      bumbu:[
+        {id:uid('b'),name:'Asin Ori',stock:200},
+        {id:uid('b'),name:'Asin Daun Jeruk',stock:200},
+        {id:uid('b'),name:'Keju',stock:200},
+        {id:uid('b'),name:'Pedas Asin',stock:200},
+        {id:uid('b'),name:'Pedas Asin Daun Jeruk',stock:200},
+        {id:uid('b'),name:'Ayam Bawang',stock:200},
+        {id:uid('b'),name:'Seaweed',stock:200},
+      ],
+      addonLabel:'Add-On', addons:[
+        {id:uid('t'),name:'Kuah Keju',price:3000,stock:100},
+      ]
+    },
+    cilok: {
+      bumbuLabel:'Saus', bumbuMode:'multi-first-free', sauceExtraFee:3000,
+      bumbu:[
+        {id:uid('b'),name:'Saus Kacang',stock:200},
+        {id:uid('b'),name:'Kuah Keju',stock:200},
+        {id:uid('b'),name:'Sambal Goang',stock:200},
+        {id:uid('b'),name:'Chili Oil',stock:200},
+      ],
+      addonLabel:'Topping Tambahan', addons:[
+        {id:uid('t'),name:'Pilus Cikur',price:1000,stock:100},
+        {id:uid('t'),name:'Cirawang',price:1500,stock:100},
+        {id:uid('t'),name:'Bakso Tahu',price:2500,stock:100},
+      ]
+    },
+    cuanki: {
+      bumbuLabel:'', bumbuMode:'none', sauceExtraFee:0,
+      bumbu:[],
+      addonLabel:'Add-On', addons:[
+        {id:uid('t'),name:'Pilus Cikur',price:1000,stock:100},
+        {id:uid('t'),name:'Cirawang',price:1500,stock:100},
+        {id:uid('t'),name:'Cilok',price:2000,stock:100},
+      ]
+    }
+  };
+}
+
+function defaultIngredients(){
+  return [
+    {id:uid('ing'), name:'Cup Plastik 16oz', unit:'pcs', stock:200},
+    {id:uid('ing'), name:'Sedotan', unit:'pcs', stock:300},
+    {id:uid('ing'), name:'Kantong Plastik / Kresek', unit:'pcs', stock:200},
+    {id:uid('ing'), name:'Es Batu', unit:'gram', stock:20000},
+    {id:uid('ing'), name:'Mangkuk/Cup Kertas', unit:'pcs', stock:150},
+    {id:uid('ing'), name:'Sendok Plastik', unit:'pcs', stock:200},
+  ];
 }
 
 async function loadDB(){
@@ -328,25 +380,54 @@ async function loadDB(){
     await dbSet('meta_seeded', true);
   } else {
     DB.products = await dbGet('products', []);
-    DB.bumbuOptions = await dbGet('bumbuOptions', []);
-    DB.toppingOptions = await dbGet('toppingOptions', []);
+    DB.flavorGroups = await dbGet('flavorGroups', null);
+    DB.ingredients = await dbGet('ingredients', null);
     DB.customers = await dbGet('customers', []);
     DB.rentals = await dbGet('rentals', []);
     DB.transactions = await dbGet('transactions', []);
     DB.staff = await dbGet('staff', []);
     DB.attendance = await dbGet('attendance', []);
+    DB.shifts = await dbGet('shifts', []);
+    DB.cashFlows = await dbGet('cashFlows', []);
   }
+  await runMigrations();
+}
+async function runMigrations(){
+  let changed = false;
+  if(!DB.flavorGroups){
+    DB.flavorGroups = defaultFlavorGroups();
+    changed = true;
+  }
+  const defaults = defaultFlavorGroups();
+  ['cimol','cilok','cuanki'].forEach(cat=>{
+    if(!DB.flavorGroups[cat]) { DB.flavorGroups[cat] = defaults[cat]; changed = true; }
+  });
+  if(!DB.products.some(p=>p.category==='cuanki')){
+    DB.products.push(
+      {id:uid('p'),name:'Cuanki',category:'cuanki',price:14000,cogs:6000,stock:40,unit:'porsi',customizable:true},
+      {id:uid('p'),name:'Baso Aci (Baci)',category:'cuanki',price:13000,cogs:5500,stock:40,unit:'porsi',customizable:true}
+    );
+    changed = true;
+  }
+  if(!DB.ingredients){
+    DB.ingredients = defaultIngredients();
+    changed = true;
+  }
+  DB.products.forEach(p=>{ if(!p.recipe){ p.recipe = []; changed = true; } });
+  if(changed) await saveAll();
 }
 async function saveAll(){
   await Promise.all([
     dbSet('products', DB.products),
-    dbSet('bumbuOptions', DB.bumbuOptions),
-    dbSet('toppingOptions', DB.toppingOptions),
+    dbSet('flavorGroups', DB.flavorGroups),
+    dbSet('ingredients', DB.ingredients),
     dbSet('customers', DB.customers),
     dbSet('rentals', DB.rentals),
     dbSet('transactions', DB.transactions),
     dbSet('staff', DB.staff),
     dbSet('attendance', DB.attendance),
+    dbSet('shifts', DB.shifts),
+    dbSet('cashFlows', DB.cashFlows),
   ]);
 }
 async function save(key){ await dbSet(key, DB[key]); }
@@ -406,10 +487,11 @@ function attachLoginEvents(){
 function tabsForRole(role){
   const base = [
     {id:'kasir',label:'🛒 Kasir'},
+    {id:'kas',label:'💵 Kas Masuk/Keluar'},
     {id:'sewa',label:'🧺 Sewa & Pelanggan'},
-    {id:'absen',label:'🕒 Absen'},
-    {id:'inventori',label:'📦 Inventori'},
   ];
+  if(role==='staff') base.push({id:'absen',label:'🕒 Absen'});
+  base.push({id:'inventori',label:'📦 Inventori'});
   if(role==='owner'){
     base.push({id:'laporan',label:'📊 Laporan'});
     base.push({id:'staff',label:'👥 Staff'});
@@ -445,6 +527,7 @@ function attachShellEvents(){
 function renderTabContent(){
   const el = document.getElementById('mainContent');
   if(STATE.tab==='kasir') el.innerHTML = renderKasir();
+  else if(STATE.tab==='kas') el.innerHTML = renderKas();
   else if(STATE.tab==='inventori') el.innerHTML = renderInventori();
   else if(STATE.tab==='sewa') el.innerHTML = renderSewa();
   else if(STATE.tab==='absen') el.innerHTML = renderAbsen();
@@ -452,6 +535,7 @@ function renderTabContent(){
   else if(STATE.tab==='staff') el.innerHTML = renderStaff();
   // attach per-tab events after DOM is in place
   if(STATE.tab==='kasir') attachKasirEvents();
+  if(STATE.tab==='kas') attachKasEvents();
   if(STATE.tab==='inventori') attachInventoriEvents();
   if(STATE.tab==='sewa') attachSewaEvents();
   if(STATE.tab==='absen') attachAbsenEvents();
@@ -464,12 +548,38 @@ const CATS = [
   {id:'minuman',label:'🥤 Minuman'},
   {id:'cimol',label:'🥟 Cimol'},
   {id:'cilok',label:'🍡 Cilok'},
+  {id:'cuanki',label:'🍜 Cuanki & Baci'},
   {id:'balon',label:'🎈 Balon'},
   {id:'sewa',label:'🧺 Sewa Tikar'},
 ];
+const CASHIN_CATS = ['Setoran Modal Owner','Penjualan di Luar Sistem','Pengembalian/Refund Masuk','Lainnya'];
+const CASHOUT_CATS = ['Beli Bahan Baku','Operasional (listrik, parkir, kebersihan)','Gaji/Bonus Karyawan','Perlengkapan/Peralatan','Lainnya'];
 function renderKasir(){
+  const isOwner = STATE.session.role==='owner';
+  const shift = getActiveShift(STATE.session.username);
+  if(!isOwner && !shift){
+    return `
+    <div class="card" style="max-width:460px;margin:40px auto;text-align:center">
+      <div style="font-size:40px">🔒</div>
+      <h2 class="section-title" style="justify-content:center">Kasir Belum Dibuka</h2>
+      <p style="color:var(--ink-soft);font-size:13.5px">Buka kasir dulu (otomatis jadi absen masuk kamu) sebelum bisa memproses transaksi.</p>
+      <button class="btn btn-primary" id="openShiftBtn">🔓 Buka Kasir</button>
+    </div>`;
+  }
+  const recap = shift ? computeShiftRecap(shift) : null;
   const prods = DB.products.filter(p=>p.category===STATE.posCategory);
   return `
+  ${shift ? `
+  <div class="notif-banner" style="background:var(--leaf-light);border-color:var(--leaf)">
+    <div><strong style="color:var(--leaf)">🟢 Kasir Dibuka</strong>
+    <div style="font-size:12px;color:var(--ink-soft)">Oleh ${shift.name} — pukul ${fmtTime(shift.openTime)} · Kas awal ${rp(shift.openingCash)}</div>
+    <div style="font-size:12px;color:var(--ink-soft)">Transaksi shift ini: ${recap.txCount} · Pendapatan: ${rp(recap.totalRevenue)} · Cup minuman: ${recap.cupsSold}</div></div>
+    <button class="btn btn-sm btn-outline" id="closeShiftBtn">🔒 Tutup Kasir</button>
+  </div>` : `
+  <div class="notif-banner" style="background:#F3F0FF;border-color:#8B7FD6">
+    <div><strong style="color:#5A4FCF">👑 Mode Owner</strong>
+    <div style="font-size:12px;color:var(--ink-soft)">Kamu bisa langsung transaksi tanpa buka/tutup kasir — fitur itu khusus untuk staff (sekaligus jadi absen mereka).</div></div>
+  </div>`}
   <div class="grid-2">
     <div>
       <h2 class="section-title">Kasir — Pilih Produk</h2>
@@ -479,7 +589,6 @@ function renderKasir(){
       <div class="prod-grid">
         ${prods.map(p=>`
           <button class="prod-card" data-pid="${p.id}" ${p.stock<=0?'disabled':''}>
-            <div class="prod-emoji">${p.emoji||'🍽️'}</div>
             <div class="prod-name">${p.name}</div>
             <div class="prod-price">${rp(p.price)}${p.category==='sewa'?'/jam':''}</div>
             <div class="prod-stock ${p.stock<=5?'stock-low':''}">Stok: ${p.stock} ${p.unit}</div>
@@ -517,7 +626,56 @@ function renderCartItem(c,i){
 }
 function cartTotal(){ return STATE.cart.reduce((s,c)=>s+c.subtotal,0); }
 
+/* ============ SHIFT / BUKA-TUTUP KASIR ============ */
+const COMMISSION_PER_CUP = 1000;
+const WEEKDAY_CUP_THRESHOLD = 20;
+const WEEKEND_CUP_THRESHOLD = 70;
+
+function getActiveShift(username){
+  return DB.shifts.find(s=>s.username===username && s.status==='open');
+}
+function shiftTransactions(shiftId){
+  return DB.transactions.filter(t=>t.shiftId===shiftId);
+}
+function shiftCashFlows(shiftId){
+  return DB.cashFlows.filter(c=>c.shiftId===shiftId);
+}
+function computeShiftRecap(shift){
+  const txs = shiftTransactions(shift.id);
+  const totalRevenue = txs.reduce((s,t)=>s+t.total,0);
+  const totalCash = txs.filter(t=>t.payment==='cash').reduce((s,t)=>s+t.total,0);
+  const totalQris = txs.filter(t=>t.payment==='qris').reduce((s,t)=>s+t.total,0);
+  let cupsSold = 0;
+  txs.forEach(t=> t.items.forEach(it=>{ if(it.category==='minuman') cupsSold += it.qty; }));
+  const flows = shiftCashFlows(shift.id);
+  const kasMasuk = flows.filter(c=>c.type==='in').reduce((s,c)=>s+c.amount,0);
+  const kasKeluar = flows.filter(c=>c.type==='out').reduce((s,c)=>s+c.amount,0);
+  return { txCount:txs.length, totalRevenue, totalCash, totalQris, cupsSold, kasMasuk, kasKeluar };
+}
+function isWeekend(dateMs){
+  const day = new Date(dateMs).getDay();
+  return day===0 || day===6;
+}
+function computeShiftCommission(shift, cupsSold){
+  if(!isWeekend(shift.openTime)){
+    return cupsSold > WEEKDAY_CUP_THRESHOLD ? cupsSold * COMMISSION_PER_CUP : 0;
+  } else {
+    const otherSameDayCups = DB.shifts
+      .filter(s=> s.username===shift.username && s.date===shift.date && s.status==='closed' && s.id!==shift.id)
+      .reduce((sum,s)=> sum+(s.cupsSold||0), 0);
+    const dayTotal = otherSameDayCups + cupsSold;
+    return dayTotal > WEEKEND_CUP_THRESHOLD ? cupsSold * COMMISSION_PER_CUP : 0;
+  }
+}
+
 function attachKasirEvents(){
+  const openBtn = document.getElementById('openShiftBtn');
+  if(openBtn){ openBtn.onclick = ()=>{ STATE.modal={type:'shiftOpen', data:{openingCash:''}}; render(); }; return; }
+  const closeBtn = document.getElementById('closeShiftBtn');
+  if(closeBtn){ closeBtn.onclick = ()=>{
+    const shift = getActiveShift(STATE.session.username);
+    STATE.modal={type:'shiftClose', data:{shift, closingCashCounted:''}}; render();
+  }; }
   document.querySelectorAll('[data-cat]').forEach(b=> b.onclick=()=>{STATE.posCategory=b.dataset.cat; renderTabContent();});
   document.querySelectorAll('[data-pid]').forEach(b=> b.onclick=()=>{
     const p = DB.products.find(x=>x.id===b.dataset.pid);
@@ -553,7 +711,9 @@ function addToCart(item){ item.cartId=uid('c'); STATE.cart.push(item); renderTab
 
 /* ---- customize modal (cimol/cilok) ---- */
 function openCustomizeModal(p){
-  STATE.modal = {type:'customize', data:{product:p, bumbuId: (DB.bumbuOptions.length? DB.bumbuOptions[0].id : ''), toppings:[]}};
+  const group = DB.flavorGroups[p.category] || {bumbuMode:'none', bumbu:[], addons:[]};
+  const initBumbuId = group.bumbuMode==='single' && group.bumbu.length ? group.bumbu[0].id : '';
+  STATE.modal = {type:'customize', data:{product:p, bumbuId: initBumbuId, sauceIds:[], addonIds:[]}};
   render();
 }
 function openRentalModal(p){
@@ -577,6 +737,10 @@ function renderModal(){
   else if(STATE.modal.type==='staffForm') inner = renderStaffFormModal();
   else if(STATE.modal.type==='productForm') inner = renderProductFormModal();
   else if(STATE.modal.type==='customerForm') inner = renderCustomerFormModal();
+  else if(STATE.modal.type==='shiftOpen') inner = renderShiftOpenModal();
+  else if(STATE.modal.type==='shiftClose') inner = renderShiftCloseModal();
+  else if(STATE.modal.type==='flavorItemForm') inner = renderFlavorItemFormModal();
+  else if(STATE.modal.type==='ingredientForm') inner = renderIngredientFormModal();
   overlayHtml.innerHTML = `<div class="modal">${inner}</div>`;
   document.body.appendChild(overlayHtml);
   overlayHtml.addEventListener('click', e=>{ if(e.target.id==='modalOverlay'){ STATE.modal=null; closeModalDom(); }});
@@ -584,36 +748,76 @@ function renderModal(){
 }
 function closeModalDom(){ const o=document.getElementById('modalOverlay'); if(o) o.remove(); }
 
+function sauceCharge(group, sauceIds){
+  if(!sauceIds.length) return 0;
+  return (sauceIds.length-1) * (group.sauceExtraFee||0);
+}
+function addonCharge(group, addonIds){
+  return addonIds.reduce((sum,id)=>{
+    const a = group.addons.find(x=>x.id===id);
+    return sum + (a? a.price : 0);
+  }, 0);
+}
 function renderCustomizeModal(){
-  const {product,bumbuId,toppings} = STATE.modal.data;
-  const toppingTotal = toppings.reduce((s,tid)=>{const t=DB.toppingOptions.find(x=>x.id===tid); return s+(t?t.price:0);},0);
+  const {product,bumbuId,sauceIds,addonIds} = STATE.modal.data;
+  const group = DB.flavorGroups[product.category] || {bumbuMode:'none', bumbu:[], addons:[], addonLabel:'Add-On'};
+  const total = product.price + sauceCharge(group,sauceIds) + addonCharge(group,addonIds);
+  let bumbuSection = '';
+  if(group.bumbuMode==='single' && group.bumbu.length){
+    bumbuSection = `
+    <div style="margin-top:10px">
+      <strong style="font-size:13px">Pilih ${group.bumbuLabel}</strong>
+      ${group.bumbu.map(b=>`
+        <div class="opt-row">
+          <input type="radio" name="bumbu" value="${b.id}" ${bumbuId===b.id?'checked':''} id="bumbu_${b.id}">
+          <label for="bumbu_${b.id}">${b.name} ${b.stock<=5?'<span style=\"color:var(--chili);font-size:11px\">(stok tipis)</span>':''}</label>
+        </div>`).join('')}
+    </div>`;
+  } else if(group.bumbuMode==='multi-first-free' && group.bumbu.length){
+    bumbuSection = `
+    <div style="margin-top:10px">
+      <strong style="font-size:13px">Pilih ${group.bumbuLabel}</strong>
+      <p style="font-size:11.5px;color:var(--ink-soft);margin:2px 0 6px">${group.bumbuLabel} pertama gratis. ${group.bumbuLabel} tambahan kena biaya add-on +${rp(group.sauceExtraFee)}.</p>
+      ${group.bumbu.map(b=>{
+        const idx = sauceIds.indexOf(b.id);
+        const isSelected = idx!==-1;
+        const isFree = isSelected && idx===0;
+        const priceLabel = isSelected ? (isFree? 'Gratis' : ('+'+rp(group.sauceExtraFee))) : ('+'+rp(group.sauceExtraFee));
+        const priceColor = isFree ? 'var(--leaf)' : 'var(--chili)';
+        return `
+        <div class="opt-row">
+          <input type="checkbox" value="${b.id}" class="sauceChk" ${isSelected?'checked':''} id="sauce_${b.id}">
+          <label for="sauce_${b.id}">${b.name} ${b.stock<=5?'<span style=\"color:var(--chili);font-size:11px\">(stok tipis)</span>':''}</label>
+          <span style="font-size:12.5px;font-weight:700;color:${priceColor}">${priceLabel}</span>
+        </div>`;
+      }).join('')}
+    </div>`;
+  }
+  let addonSection = '';
+  if(group.addons.length){
+    addonSection = `
+    <div style="margin-top:10px">
+      <strong style="font-size:13px">${group.addonLabel}</strong>
+      ${group.addons.map(a=>`
+        <div class="opt-row">
+          <input type="checkbox" value="${a.id}" class="addonChk" ${addonIds.includes(a.id)?'checked':''} id="addon_${a.id}">
+          <label for="addon_${a.id}">${a.name} ${a.stock<=5?'<span style=\"color:var(--chili);font-size:11px\">(stok tipis)</span>':''}</label>
+          <span style="font-size:12.5px;font-weight:700;color:var(--chili)">+${rp(a.price)}</span>
+        </div>`).join('')}
+    </div>`;
+  }
   return `
-  <h3>${product.emoji} ${product.name}</h3>
-  <p style="color:var(--ink-soft);font-size:13px;margin-top:0">Pilih bumbu &amp; topping tambahan</p>
-  <div style="margin-top:10px">
-    <strong style="font-size:13px">Pilih Bumbu</strong>
-    ${DB.bumbuOptions.map(b=>`
-      <div class="opt-row">
-        <input type="radio" name="bumbu" value="${b.id}" ${bumbuId===b.id?'checked':''} id="bumbu_${b.id}">
-        <label for="bumbu_${b.id}">${b.name} ${b.stock<=5?'<span style=\"color:var(--chili);font-size:11px\">(stok tipis)</span>':''}</label>
-      </div>`).join('')}
-  </div>
-  <div style="margin-top:10px">
-    <strong style="font-size:13px">Topping Tambahan</strong>
-    ${DB.toppingOptions.map(t=>`
-      <div class="opt-row">
-        <input type="checkbox" value="${t.id}" class="toppingChk" ${toppings.includes(t.id)?'checked':''} id="top_${t.id}">
-        <label for="top_${t.id}">${t.name}</label>
-        <span style="font-size:12.5px;font-weight:700;color:var(--chili)">+${rp(t.price)}</span>
-      </div>`).join('')}
-  </div>
+  <h3>${product.name}</h3>
+  <p style="color:var(--ink-soft);font-size:13px;margin-top:0">Sesuaikan pesanan</p>
+  ${bumbuSection}
+  ${addonSection}
   <div class="field" style="margin-top:14px">
     <label>Jumlah Porsi</label>
     <input type="number" id="customQty" min="1" value="1">
   </div>
   <div style="display:flex;gap:8px;margin-top:14px">
     <button class="btn btn-outline" id="cancelModal">Batal</button>
-    <button class="btn btn-primary" id="addCustomToCart">Tambah — ${rp(product.price+toppingTotal)}</button>
+    <button class="btn btn-primary" id="addCustomToCart">Tambah — ${rp(total)}</button>
   </div>`;
 }
 function renderRentalModal(){
@@ -673,8 +877,9 @@ function renderReceiptModal(){
     <div style="display:flex;justify-content:space-between;font-size:12px;color:var(--ink-soft)"><span>Metode</span><span>${t.payment.toUpperCase()}</span></div>
     ${t.payment==='cash'? `<div style="display:flex;justify-content:space-between;font-size:12px;color:var(--ink-soft)"><span>Kembalian</span><span>${rp(t.change)}</span></div>`:''}
   </div>
-  <div style="display:flex;gap:8px;margin-top:14px">
-    <button class="btn btn-outline" id="printBtn">🖨️ Cetak Struk</button>
+  <p style="font-size:11px;color:var(--ink-soft);margin:8px 0 0">Struk sudah otomatis dikirim ke print dialog. Kalau tidak keluar dari mesin struk, klik cetak ulang di bawah.</p>
+  <div style="display:flex;gap:8px;margin-top:10px">
+    <button class="btn btn-outline" id="printBtn">🖨️ Cetak Ulang Struk</button>
     <button class="btn btn-primary" id="closeReceiptBtn">Selesai</button>
   </div>`;
 }
@@ -698,6 +903,21 @@ function renderProductFormModal(){
   const p = STATE.modal.data.product;
   const isOwner = STATE.session.role==='owner';
   const catOpts = CATS.map(c=>({value:c.id, label:c.label}));
+  const recipeRows = STATE.modal.data.recipeRows || [];
+  const ingOpts = DB.ingredients.map(i=>({value:i.id, label:`${i.name} (${i.unit})`}));
+  const recipeSection = DB.ingredients.length ? `
+  <div style="margin-top:16px;border-top:1px dashed var(--line);padding-top:12px">
+    <strong style="font-size:13px">Resep Bahan Baku (opsional)</strong>
+    <p style="font-size:11px;color:var(--ink-soft);margin:2px 0 8px">Jumlah bahan yang terpakai untuk 1x jual produk ini. Stok bahan baku otomatis berkurang saat produk ini terjual. Kelola daftar bahan baku di tab Inventori.</p>
+    ${recipeRows.map((r,idx)=>`
+      <div style="display:flex;gap:6px;align-items:center;margin-bottom:8px">
+        <div style="flex:1">${dropdownHtml('recipeIngDD_'+idx, ingOpts, r.ingredientId||(ingOpts[0]?ingOpts[0].value:''))}</div>
+        <input type="number" class="recipeQtyInput" data-idx="${idx}" value="${r.qty}" style="width:76px;padding:9px 8px;border:2px solid var(--line);border-radius:8px;font-size:13px" placeholder="Jml">
+        <button type="button" class="btn btn-sm btn-outline" data-remove-recipe="${idx}">✕</button>
+      </div>`).join('')}
+    <button type="button" class="btn btn-sm btn-secondary" id="addRecipeRowBtn">+ Tambah Bahan ke Resep</button>
+  </div>` : `
+  <p style="font-size:11px;color:var(--ink-soft);margin-top:14px">Belum ada bahan baku terdaftar. Tambahkan dulu di tab Inventori → Bahan Baku, baru bisa dipakai untuk resep.</p>`;
   return `
   <h3>${p?'Edit':'Tambah'} Produk</h3>
   <div class="field"><label>Nama</label><input id="pfName" value="${p?p.name:''}"></div>
@@ -709,7 +929,8 @@ function renderProductFormModal(){
     <input id="pfCogs" type="number" value="${p?p.cogs:0}" ${!isOwner?'disabled':''}></div>
   <div class="field"><label>Stok</label><input id="pfStock" type="number" value="${p?p.stock:0}"></div>
   <div class="field"><label>Satuan</label><input id="pfUnit" value="${p?p.unit:'pcs'}"></div>
-  <div style="display:flex;gap:8px">
+  ${recipeSection}
+  <div style="display:flex;gap:8px;margin-top:14px">
     <button class="btn btn-outline" id="cancelModal">Batal</button>
     <button class="btn btn-primary" id="saveProductBtn">Simpan</button>
   </div>`;
@@ -725,6 +946,75 @@ function renderCustomerFormModal(){
     <button class="btn btn-primary" id="saveCustomerBtn">Simpan</button>
   </div>`;
 }
+function renderFlavorItemFormModal(){
+  const {catId, listType, item} = STATE.modal.data;
+  const g = DB.flavorGroups[catId];
+  const label = listType==='bumbu' ? g.bumbuLabel : g.addonLabel;
+  const needsPrice = listType==='addons';
+  return `
+  <h3>${item?'Edit':'Tambah'} ${label}</h3>
+  <p style="color:var(--ink-soft);font-size:12.5px;margin-top:-4px">Kategori: ${catId}</p>
+  <div class="field"><label>Nama</label><input id="fiName" value="${item?item.name:''}"></div>
+  ${needsPrice? `<div class="field"><label>Harga Add-On (Rp)</label><input id="fiPrice" type="number" value="${item?item.price:0}"></div>`:''}
+  <div class="field"><label>Stok</label><input id="fiStock" type="number" value="${item?item.stock:50}"></div>
+  <div style="display:flex;gap:8px">
+    <button class="btn btn-outline" id="cancelModal">Batal</button>
+    <button class="btn btn-primary" id="saveFlavorItemBtn">Simpan</button>
+  </div>`;
+}
+function renderIngredientFormModal(){
+  const item = STATE.modal.data.item;
+  return `
+  <h3>${item?'Edit':'Tambah'} Bahan Baku</h3>
+  <div class="field"><label>Nama</label><input id="ingName" value="${item?item.name:''}" placeholder="cth: Tepung Tapioka"></div>
+  <div class="field"><label>Satuan</label><input id="ingUnit" value="${item?item.unit:'gram'}" placeholder="gram / ml / pcs"></div>
+  <div class="field"><label>Stok Saat Ini</label><input id="ingStock" type="number" value="${item?item.stock:0}"></div>
+  <div style="display:flex;gap:8px">
+    <button class="btn btn-outline" id="cancelModal">Batal</button>
+    <button class="btn btn-primary" id="saveIngredientBtn">Simpan</button>
+  </div>`;
+}
+function renderShiftOpenModal(){
+  return `
+  <h3>🔓 Buka Kasir</h3>
+  <p style="color:var(--ink-soft);font-size:13px;margin-top:0">Masukkan jumlah uang tunai di laci sebelum mulai jualan.</p>
+  <div class="field"><label>Kas Awal (Rp)</label><input type="number" id="openingCashInput" placeholder="0" value="${STATE.modal.data.openingCash}"></div>
+  <div style="display:flex;gap:8px">
+    <button class="btn btn-outline" id="cancelModal">Batal</button>
+    <button class="btn btn-primary" id="confirmOpenShiftBtn">Buka Kasir</button>
+  </div>`;
+}
+function renderShiftCloseModal(){
+  const shift = STATE.modal.data.shift;
+  const recap = computeShiftRecap(shift);
+  const commission = computeShiftCommission(shift, recap.cupsSold);
+  const expectedCash = shift.openingCash + recap.totalCash + recap.kasMasuk - recap.kasKeluar;
+  const weekendTxt = isWeekend(shift.openTime)
+    ? `Akhir pekan: komisi aktif jika total cup hari ini (gabungan semua shift) &gt; ${WEEKEND_CUP_THRESHOLD} cup`
+    : `Hari kerja: komisi aktif jika cup shift ini &gt; ${WEEKDAY_CUP_THRESHOLD} cup`;
+  return `
+  <h3>🔒 Tutup Kasir</h3>
+  <p style="color:var(--ink-soft);font-size:12.5px;margin-top:-4px">Shift ${shift.name} — dibuka ${fmtTime(shift.openTime)}</p>
+  <div style="background:#FAF5EA;border-radius:10px;padding:12px;font-size:13px;margin:10px 0">
+    <div class="row" style="display:flex;justify-content:space-between"><span>Jumlah Transaksi</span><strong>${recap.txCount}</strong></div>
+    <div class="row" style="display:flex;justify-content:space-between"><span>Penjualan Tunai</span><strong>${rp(recap.totalCash)}</strong></div>
+    <div class="row" style="display:flex;justify-content:space-between"><span>Penjualan QRIS</span><strong>${rp(recap.totalQris)}</strong></div>
+    <div class="row" style="display:flex;justify-content:space-between;font-weight:800;border-top:1px dashed var(--line);margin-top:6px;padding-top:6px"><span>Total Pendapatan</span><span>${rp(recap.totalRevenue)}</span></div>
+    <div class="row" style="display:flex;justify-content:space-between;margin-top:8px;color:var(--leaf)"><span>💰 Kas Masuk (manual)</span><strong>+${rp(recap.kasMasuk)}</strong></div>
+    <div class="row" style="display:flex;justify-content:space-between;color:var(--chili)"><span>💸 Kas Keluar (manual)</span><strong>-${rp(recap.kasKeluar)}</strong></div>
+    <div class="row" style="display:flex;justify-content:space-between;margin-top:8px"><span>🥤 Cup Minuman Terjual</span><strong>${recap.cupsSold}</strong></div>
+    <div class="row" style="display:flex;justify-content:space-between;color:${commission>0?'var(--leaf)':'var(--ink-soft)'}"><span>Estimasi Komisi</span><strong>${rp(commission)}</strong></div>
+    <div style="font-size:11px;color:var(--ink-soft);margin-top:4px">${weekendTxt}</div>
+  </div>
+  <div class="field"><label>Kas Awal</label><input value="${rp(shift.openingCash)}" disabled></div>
+  <div class="field"><label>Ekspektasi Kas di Laci</label><input value="${rp(expectedCash)}" disabled></div>
+  <div class="field"><label>Uang Tunai Dihitung Sekarang (Rp)</label><input type="number" id="closingCashInput" placeholder="0" value="${STATE.modal.data.closingCashCounted}"></div>
+  <p id="cashDiffLabel" style="font-weight:700;font-size:13px"></p>
+  <div style="display:flex;gap:8px;margin-top:6px">
+    <button class="btn btn-outline" id="cancelModal">Batal</button>
+    <button class="btn btn-primary" id="confirmCloseShiftBtn">Tutup Kasir</button>
+  </div>`;
+}
 
 function attachModalEvents(){
   const cancel = document.getElementById('cancelModal');
@@ -732,22 +1022,34 @@ function attachModalEvents(){
 
   if(STATE.modal.type==='customize'){
     document.querySelectorAll('[name="bumbu"]').forEach(r=> r.onchange=()=>{ STATE.modal.data.bumbuId=r.value; });
-    document.querySelectorAll('.toppingChk').forEach(c=> c.onchange=()=>{
-      const set = new Set(STATE.modal.data.toppings);
+    document.querySelectorAll('.sauceChk').forEach(c=> c.onchange=()=>{
+      const set = new Set(STATE.modal.data.sauceIds);
       if(c.checked) set.add(c.value); else set.delete(c.value);
-      STATE.modal.data.toppings = [...set];
+      STATE.modal.data.sauceIds = [...set];
+      closeModalDom(); renderModal();
+    });
+    document.querySelectorAll('.addonChk').forEach(c=> c.onchange=()=>{
+      const set = new Set(STATE.modal.data.addonIds);
+      if(c.checked) set.add(c.value); else set.delete(c.value);
+      STATE.modal.data.addonIds = [...set];
       closeModalDom(); renderModal();
     });
     document.getElementById('addCustomToCart').onclick = ()=>{
       const qty = Math.max(1, +document.getElementById('customQty').value || 1);
-      const {product,bumbuId,toppings} = STATE.modal.data;
-      const bumbu = DB.bumbuOptions.find(b=>b.id===bumbuId);
-      const topObjs = toppings.map(tid=>DB.toppingOptions.find(t=>t.id===tid)).filter(Boolean);
-      const unitPrice = product.price + topObjs.reduce((s,t)=>s+t.price,0);
+      const {product,bumbuId,sauceIds,addonIds} = STATE.modal.data;
+      const group = DB.flavorGroups[product.category] || {bumbuMode:'none', bumbu:[], addons:[]};
+      const bumbu = group.bumbuMode==='single' ? group.bumbu.find(b=>b.id===bumbuId) : null;
+      const sauceObjs = sauceIds.map(id=>group.bumbu.find(b=>b.id===id)).filter(Boolean);
+      const addonObjs = addonIds.map(id=>group.addons.find(a=>a.id===id)).filter(Boolean);
+      const unitPrice = product.price + sauceCharge(group,sauceIds) + addonCharge(group,addonIds);
+      const parts = [];
+      if(bumbu) parts.push(`${group.bumbuLabel}: ${bumbu.name}`);
+      if(sauceObjs.length) parts.push(`${group.bumbuLabel}: `+sauceObjs.map((s,idx)=> idx===0? `${s.name} (gratis)` : `${s.name} (+${rp(group.sauceExtraFee)})`).join(', '));
+      if(addonObjs.length) parts.push(`${group.addonLabel}: `+addonObjs.map(a=>`${a.name} (+${rp(a.price)})`).join(', '));
       addToCart({
         productId:product.id, name:product.name, qty, unitPrice,
-        meta:`Bumbu: ${bumbu?bumbu.name:'-'}${topObjs.length?', +'+topObjs.map(t=>t.name).join(', '):''}`,
-        subtotal:unitPrice*qty, bumbuId, toppingIds:toppings
+        meta: parts.join(' · '),
+        subtotal:unitPrice*qty, bumbuId: bumbu?bumbuId:'', sauceIds, addonIds
       });
       STATE.modal=null; closeModalDom(); renderTabContent();
     };
@@ -825,6 +1127,22 @@ function attachModalEvents(){
   }
   if(STATE.modal.type==='productForm'){
     initDropdown('pfCatDD');
+    STATE.modal.data.recipeRows.forEach((r,idx)=>{
+      initDropdown('recipeIngDD_'+idx, (val)=>{ STATE.modal.data.recipeRows[idx].ingredientId = val; });
+    });
+    document.querySelectorAll('.recipeQtyInput').forEach(inp=>{
+      inp.oninput = ()=>{ STATE.modal.data.recipeRows[+inp.dataset.idx].qty = +inp.value||0; };
+    });
+    document.querySelectorAll('[data-remove-recipe]').forEach(b=> b.onclick=()=>{
+      STATE.modal.data.recipeRows.splice(+b.dataset.removeRecipe,1);
+      closeModalDom(); renderModal();
+    });
+    const addRecipeBtn = document.getElementById('addRecipeRowBtn');
+    if(addRecipeBtn) addRecipeBtn.onclick = ()=>{
+      const firstIng = DB.ingredients[0];
+      STATE.modal.data.recipeRows.push({ingredientId: firstIng?firstIng.id:'', qty:1});
+      closeModalDom(); renderModal();
+    };
     document.getElementById('saveProductBtn').onclick = ()=>{
       const name=document.getElementById('pfName').value.trim();
       const category=getDropdownValue('pfCatDD');
@@ -833,11 +1151,12 @@ function attachModalEvents(){
       const stock=+document.getElementById('pfStock').value||0;
       const unit=document.getElementById('pfUnit').value.trim()||'pcs';
       if(!name){ alert('Nama produk wajib diisi.'); return; }
+      const recipe = STATE.modal.data.recipeRows.filter(r=>r.ingredientId && r.qty>0).map(r=>({ingredientId:r.ingredientId, qty:+r.qty}));
       const existing = STATE.modal.data.product;
       if(existing){
-        Object.assign(existing,{name,category,price,cogs,stock,unit});
+        Object.assign(existing,{name,category,price,cogs,stock,unit,recipe});
       } else {
-        DB.products.push({id:uid('p'),name,category,price,cogs,stock,unit,emoji:'🍽️',customizable:(category==='cimol'||category==='cilok')});
+        DB.products.push({id:uid('p'),name,category,price,cogs,stock,unit,recipe,customizable:(category==='cimol'||category==='cilok'||category==='cuanki')});
       }
       save('products');
       STATE.modal=null; closeModalDom(); renderTabContent();
@@ -854,10 +1173,113 @@ function attachModalEvents(){
       STATE.modal=null; closeModalDom(); renderTabContent();
     };
   }
+  if(STATE.modal.type==='flavorItemForm'){
+    document.getElementById('saveFlavorItemBtn').onclick = ()=>{
+      const {catId, listType, item} = STATE.modal.data;
+      const name = document.getElementById('fiName').value.trim();
+      const stock = +document.getElementById('fiStock').value||0;
+      const priceInput = document.getElementById('fiPrice');
+      const price = priceInput ? (+priceInput.value||0) : 0;
+      if(!name){ alert('Nama wajib diisi.'); return; }
+      if(item){
+        item.name = name; item.stock = stock;
+        if(listType==='addons') item.price = price;
+      } else {
+        const newItem = {id:uid(listType==='bumbu'?'b':'t'), name, stock};
+        if(listType==='addons') newItem.price = price;
+        DB.flavorGroups[catId][listType].push(newItem);
+      }
+      save('flavorGroups');
+      STATE.modal=null; closeModalDom(); renderTabContent();
+    };
+  }
+  if(STATE.modal.type==='ingredientForm'){
+    document.getElementById('saveIngredientBtn').onclick = ()=>{
+      const item = STATE.modal.data.item;
+      const name = document.getElementById('ingName').value.trim();
+      const unit = document.getElementById('ingUnit').value.trim()||'pcs';
+      const stock = +document.getElementById('ingStock').value||0;
+      if(!name){ alert('Nama wajib diisi.'); return; }
+      if(item){
+        item.name = name; item.unit = unit; item.stock = stock;
+      } else {
+        DB.ingredients.push({id:uid('ing'), name, unit, stock});
+      }
+      save('ingredients');
+      STATE.modal=null; closeModalDom(); renderTabContent();
+    };
+  }
+  if(STATE.modal.type==='shiftOpen'){
+    document.getElementById('confirmOpenShiftBtn').onclick = async ()=>{
+      const openingCash = +document.getElementById('openingCashInput').value||0;
+      const shift = {
+        id: uid('sh'), username: STATE.session.username, name: STATE.session.name,
+        date: todayStr(), openTime: Date.now(), closeTime: null, openingCash,
+        closingCashCounted: null, status:'open',
+        totalRevenue:0, totalCash:0, totalQris:0, txCount:0, cupsSold:0, commission:0, cashVariance:0,
+        attendanceId: null
+      };
+      // buka kasir sekaligus jadi absen masuk (khusus staff)
+      if(STATE.session.role==='staff'){
+        let att = DB.attendance.find(a=>a.username===STATE.session.username && a.date===todayStr() && !a.clockOut);
+        if(!att){
+          att = {id:uid('at'), username:STATE.session.username, name:STATE.session.name, date:todayStr(), clockIn:shift.openTime, clockOut:null};
+          DB.attendance.push(att);
+        }
+        shift.attendanceId = att.id;
+      }
+      DB.shifts.push(shift);
+      await save('shifts');
+      await save('attendance');
+      STATE.modal=null; closeModalDom(); renderTabContent();
+    };
+  }
+  if(STATE.modal.type==='shiftClose'){
+    const shift = STATE.modal.data.shift;
+    const recap = computeShiftRecap(shift);
+    const expected = shift.openingCash + recap.totalCash + recap.kasMasuk - recap.kasKeluar;
+    const diffInput = document.getElementById('closingCashInput');
+    const updateDiff = ()=>{
+      const counted = +diffInput.value||0;
+      const diff = counted-expected;
+      const lbl = document.getElementById('cashDiffLabel');
+      if(counted>0){
+        lbl.textContent = (diff===0?'Kas pas, sesuai ekspektasi.':(diff>0? 'Kelebihan kas: '+rp(diff) : 'Kekurangan kas: '+rp(Math.abs(diff))));
+        lbl.style.color = diff===0? 'var(--leaf)' : (diff>0? 'var(--turmeric)':'var(--chili)');
+      } else { lbl.textContent=''; }
+    };
+    diffInput.oninput = ()=>{ STATE.modal.data.closingCashCounted=diffInput.value; updateDiff(); };
+    updateDiff();
+    document.getElementById('confirmCloseShiftBtn').onclick = async ()=>{
+      const counted = +diffInput.value||0;
+      const finalRecap = computeShiftRecap(shift);
+      const commission = computeShiftCommission(shift, finalRecap.cupsSold);
+      const closeTime = Date.now();
+      Object.assign(shift, {
+        closeTime, status:'closed', closingCashCounted:counted,
+        totalRevenue: finalRecap.totalRevenue, totalCash: finalRecap.totalCash, totalQris: finalRecap.totalQris,
+        txCount: finalRecap.txCount, cupsSold: finalRecap.cupsSold, commission,
+        kasMasuk: finalRecap.kasMasuk, kasKeluar: finalRecap.kasKeluar,
+        cashVariance: counted-(shift.openingCash+finalRecap.totalCash+finalRecap.kasMasuk-finalRecap.kasKeluar)
+      });
+      // tutup kasir sekaligus jadi absen pulang (khusus staff)
+      if(STATE.session.role==='staff'){
+        let att = shift.attendanceId ? DB.attendance.find(a=>a.id===shift.attendanceId) : null;
+        if(!att) att = DB.attendance.find(a=>a.username===shift.username && a.date===shift.date && !a.clockOut);
+        if(att){ att.clockOut = closeTime; }
+        await save('attendance');
+      }
+      await save('shifts');
+      STATE.modal=null; closeModalDom(); renderTabContent();
+    };
+  }
 }
 
 /* ---- checkout finalize ---- */
 async function finalizeCheckout(){
+  const shift = getActiveShift(STATE.session.username);
+  const isOwner = STATE.session.role==='owner';
+  if(!isOwner && !shift){ alert('Kasir belum dibuka. Buka kasir terlebih dahulu.'); STATE.modal=null; closeModalDom(); renderTabContent(); return; }
   const method = STATE.modal.data.method;
   const total = cartTotal();
   if(method==='cash'){
@@ -868,8 +1290,19 @@ async function finalizeCheckout(){
   for(const item of STATE.cart){
     const p = DB.products.find(x=>x.id===item.productId);
     if(p){ p.stock = Math.max(0, p.stock - (item.isRental?1:item.qty)); }
-    if(item.bumbuId){ const b=DB.bumbuOptions.find(x=>x.id===item.bumbuId); if(b) b.stock=Math.max(0,b.stock-item.qty); }
-    if(item.toppingIds){ item.toppingIds.forEach(tid=>{ const t=DB.toppingOptions.find(x=>x.id===tid); if(t) t.stock=Math.max(0,t.stock-item.qty); }); }
+    const group = p ? (DB.flavorGroups[p.category]||null) : null;
+    if(group){
+      if(item.bumbuId){ const b=group.bumbu.find(x=>x.id===item.bumbuId); if(b) b.stock=Math.max(0,b.stock-item.qty); }
+      if(item.sauceIds){ item.sauceIds.forEach(id=>{ const b=group.bumbu.find(x=>x.id===id); if(b) b.stock=Math.max(0,b.stock-item.qty); }); }
+      if(item.addonIds){ item.addonIds.forEach(id=>{ const a=group.addons.find(x=>x.id===id); if(a) a.stock=Math.max(0,a.stock-item.qty); }); }
+    }
+    if(p && p.recipe && p.recipe.length){
+      const soldQty = item.isRental ? 1 : item.qty;
+      p.recipe.forEach(r=>{
+        const ing = DB.ingredients.find(x=>x.id===r.ingredientId);
+        if(ing) ing.stock = Math.max(0, ing.stock - (r.qty * soldQty));
+      });
+    }
   }
   const cogsTotal = STATE.cart.reduce((s,item)=>{
     const p = DB.products.find(x=>x.id===item.productId);
@@ -878,7 +1311,11 @@ async function finalizeCheckout(){
   const given = method==='cash' ? (+STATE.modal.data.cashGiven||0) : total;
   const transaction = {
     id: uid('TRX').toUpperCase(), timestamp: Date.now(), cashier: STATE.session.name,
-    items: STATE.cart.map(c=>({name:c.name,qty:c.qty,price:c.unitPrice,subtotal:c.subtotal,meta:c.meta})),
+    cashierUsername: STATE.session.username, shiftId: shift ? shift.id : null,
+    items: STATE.cart.map(c=>{
+      const p = DB.products.find(x=>x.id===c.productId);
+      return {name:c.name,qty:c.qty,price:c.unitPrice,subtotal:c.subtotal,meta:c.meta,category:p?p.category:'', productId:c.productId};
+    }),
     total, payment: method, change: method==='cash'? given-total : 0, cogsTotal
   };
   DB.transactions.push(transaction);
@@ -905,6 +1342,7 @@ async function finalizeCheckout(){
   STATE.cart = [];
   STATE.modal = {type:'receipt', data:{transaction}};
   closeModalDom(); render();
+  doPrintReceipt(transaction);
 }
 
 function doPrintReceipt(t){
@@ -932,7 +1370,7 @@ function renderInventori(){
   const isOwner = STATE.session.role==='owner';
   const rows = DB.products.map(p=>`
     <tr>
-      <td>${p.emoji||''} ${p.name}</td>
+      <td>${p.name}</td>
       <td>${p.category}</td>
       <td>${rp(p.price)}</td>
       <td>${isOwner? rp(p.cogs) : '—'}</td>
@@ -942,8 +1380,50 @@ function renderInventori(){
         <button class="btn btn-sm btn-outline" data-editp="${p.id}">Edit</button>
       </td>
     </tr>`).join('');
-  const bumbuRows = DB.bumbuOptions.map(b=>`<tr><td>${b.name}</td><td class="${b.stock<=5?'stock-low':''}">${b.stock}</td><td><button class="btn btn-sm btn-secondary" data-restockbumbu="${b.id}">+ Restock</button></td></tr>`).join('');
-  const topRows = DB.toppingOptions.map(t=>`<tr><td>${t.name}</td><td>${rp(t.price)}</td><td class="${t.stock<=5?'stock-low':''}">${t.stock}</td><td><button class="btn btn-sm btn-secondary" data-restocktop="${t.id}">+ Restock</button></td></tr>`).join('');
+
+  const catMeta = {cimol:{title:'Cimol', icon:'🥟'}, cilok:{title:'Cilok', icon:'🍡'}, cuanki:{title:'Cuanki & Baci', icon:'🍜'}};
+  const flavorCards = Object.keys(catMeta).map(catId=>{
+    const g = DB.flavorGroups[catId];
+    if(!g) return '';
+    let bumbuBlock = '';
+    if(g.bumbuMode!=='none'){
+      const bRows = g.bumbu.map(b=>`<tr>
+        <td>${b.name}</td><td class="${b.stock<=5?'stock-low':''}">${b.stock}</td>
+        <td style="white-space:nowrap">
+          <button class="btn btn-sm btn-secondary" data-restock-flavor="${catId}|bumbu|${b.id}">+Stok</button>
+          <button class="btn btn-sm btn-outline" data-edit-flavor="${catId}|bumbu|${b.id}">Edit</button>
+          <button class="btn btn-sm btn-outline" data-del-flavor="${catId}|bumbu|${b.id}">🗑</button>
+        </td></tr>`).join('');
+      bumbuBlock = `
+      <div style="margin-top:10px">
+        <div style="display:flex;justify-content:space-between;align-items:center">
+          <strong style="font-size:13px">${g.bumbuLabel}${g.bumbuMode==='multi-first-free'?` (pertama gratis, tambahan +${rp(g.sauceExtraFee)})`:''}</strong>
+          <button class="btn btn-sm btn-primary" data-add-flavor="${catId}|bumbu">+ Tambah</button>
+        </div>
+        <table><thead><tr><th>Nama</th><th>Stok</th><th></th></tr></thead><tbody>${bRows || `<tr><td colspan="3" style="color:var(--ink-soft)">Belum ada.</td></tr>`}</tbody></table>
+      </div>`;
+    }
+    const aRows = g.addons.map(a=>`<tr>
+      <td>${a.name}</td><td>${rp(a.price)}</td><td class="${a.stock<=5?'stock-low':''}">${a.stock}</td>
+      <td style="white-space:nowrap">
+        <button class="btn btn-sm btn-secondary" data-restock-flavor="${catId}|addons|${a.id}">+Stok</button>
+        <button class="btn btn-sm btn-outline" data-edit-flavor="${catId}|addons|${a.id}">Edit</button>
+        <button class="btn btn-sm btn-outline" data-del-flavor="${catId}|addons|${a.id}">🗑</button>
+      </td></tr>`).join('');
+    return `
+    <div class="card">
+      <h3 style="margin-top:0">${catMeta[catId].icon} ${catMeta[catId].title}</h3>
+      ${bumbuBlock}
+      <div style="margin-top:14px">
+        <div style="display:flex;justify-content:space-between;align-items:center">
+          <strong style="font-size:13px">${g.addonLabel}</strong>
+          <button class="btn btn-sm btn-primary" data-add-flavor="${catId}|addons">+ Tambah</button>
+        </div>
+        <table><thead><tr><th>Nama</th><th>Harga</th><th>Stok</th><th></th></tr></thead><tbody>${aRows || `<tr><td colspan="4" style="color:var(--ink-soft)">Belum ada.</td></tr>`}</tbody></table>
+      </div>
+    </div>`;
+  }).join('');
+
   return `
   <h2 class="section-title">Inventori</h2>
   <div class="card" style="margin-bottom:16px">
@@ -957,15 +1437,27 @@ function renderInventori(){
     </table></div>
     ${!isOwner?'<p style="font-size:11.5px;color:var(--ink-soft);margin-top:8px">*COGS hanya bisa dilihat/diubah oleh Owner.</p>':''}
   </div>
-  <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
-    <div class="card">
-      <h3 style="margin-top:0">Bumbu</h3>
-      <table><thead><tr><th>Nama</th><th>Stok</th><th></th></tr></thead><tbody>${bumbuRows}</tbody></table>
+  <div class="card" style="margin-bottom:16px">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+      <h3 style="margin:0">🧂 Bahan Baku</h3>
+      <button class="btn btn-sm btn-primary" id="addIngredientBtn">+ Tambah Bahan Baku</button>
     </div>
-    <div class="card">
-      <h3 style="margin-top:0">Topping</h3>
-      <table><thead><tr><th>Nama</th><th>Harga</th><th>Stok</th><th></th></tr></thead><tbody>${topRows}</tbody></table>
-    </div>
+    <p style="font-size:11.5px;color:var(--ink-soft);margin:0 0 10px">Stok bahan baku di sini otomatis berkurang saat produk yang punya resep dari bahan ini terjual. Atur resep tiap produk lewat tombol "Edit" di tabel Produk Utama di atas.</p>
+    <div style="overflow-x:auto"><table>
+      <thead><tr><th>Nama</th><th>Satuan</th><th>Stok</th><th></th></tr></thead>
+      <tbody>${DB.ingredients.map(i=>`<tr>
+        <td>${i.name}</td><td>${i.unit}</td><td class="${i.stock<=10?'stock-low':''}">${i.stock}</td>
+        <td style="white-space:nowrap">
+          <button class="btn btn-sm btn-secondary" data-restock-ing="${i.id}">+Stok</button>
+          <button class="btn btn-sm btn-outline" data-edit-ing="${i.id}">Edit</button>
+          <button class="btn btn-sm btn-outline" data-del-ing="${i.id}">🗑</button>
+        </td>
+      </tr>`).join('') || `<tr><td colspan="4" style="color:var(--ink-soft)">Belum ada bahan baku.</td></tr>`}</tbody>
+    </table></div>
+  </div>
+  <h3 class="section-title" style="font-size:16px">Bumbu, Saus &amp; Add-On per Menu</h3>
+  <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:16px">
+    ${flavorCards}
   </div>`;
 }
 function attachInventoriEvents(){
@@ -974,22 +1466,55 @@ function attachInventoriEvents(){
     const n = +prompt(`Tambah stok untuk "${p.name}" sebanyak:`,'10');
     if(n>0){ p.stock+=n; save('products'); renderTabContent(); }
   });
-  document.querySelectorAll('[data-restockbumbu]').forEach(b=> b.onclick=()=>{
-    const x = DB.bumbuOptions.find(o=>o.id===b.dataset.restockbumbu);
-    const n = +prompt(`Tambah stok bumbu "${x.name}" sebanyak:`,'20');
-    if(n>0){ x.stock+=n; save('bumbuOptions'); renderTabContent(); }
-  });
-  document.querySelectorAll('[data-restocktop]').forEach(b=> b.onclick=()=>{
-    const x = DB.toppingOptions.find(o=>o.id===b.dataset.restocktop);
-    const n = +prompt(`Tambah stok topping "${x.name}" sebanyak:`,'20');
-    if(n>0){ x.stock+=n; save('toppingOptions'); renderTabContent(); }
-  });
   document.querySelectorAll('[data-editp]').forEach(b=> b.onclick=()=>{
     const p = DB.products.find(x=>x.id===b.dataset.editp);
-    STATE.modal={type:'productForm',data:{product:p}}; render();
+    STATE.modal={type:'productForm',data:{product:p, recipeRows: JSON.parse(JSON.stringify(p.recipe||[]))}}; render();
   });
   const addBtn = document.getElementById('addProductBtn');
-  if(addBtn) addBtn.onclick = ()=>{ STATE.modal={type:'productForm',data:{product:null}}; render(); };
+  if(addBtn) addBtn.onclick = ()=>{ STATE.modal={type:'productForm',data:{product:null, recipeRows:[]}}; render(); };
+
+  document.querySelectorAll('[data-restock-flavor]').forEach(b=> b.onclick=()=>{
+    const [catId,listType,itemId] = b.dataset.restockFlavor.split('|');
+    const item = DB.flavorGroups[catId][listType].find(x=>x.id===itemId);
+    const n = +prompt(`Tambah stok "${item.name}" sebanyak:`,'20');
+    if(n>0){ item.stock+=n; save('flavorGroups'); renderTabContent(); }
+  });
+  document.querySelectorAll('[data-del-flavor]').forEach(b=> b.onclick=()=>{
+    const [catId,listType,itemId] = b.dataset.delFlavor.split('|');
+    const item = DB.flavorGroups[catId][listType].find(x=>x.id===itemId);
+    if(confirm(`Hapus "${item.name}"?`)){
+      DB.flavorGroups[catId][listType] = DB.flavorGroups[catId][listType].filter(x=>x.id!==itemId);
+      save('flavorGroups'); renderTabContent();
+    }
+  });
+  document.querySelectorAll('[data-edit-flavor]').forEach(b=> b.onclick=()=>{
+    const [catId,listType,itemId] = b.dataset.editFlavor.split('|');
+    const item = DB.flavorGroups[catId][listType].find(x=>x.id===itemId);
+    STATE.modal={type:'flavorItemForm', data:{catId, listType, item}}; render();
+  });
+  document.querySelectorAll('[data-add-flavor]').forEach(b=> b.onclick=()=>{
+    const [catId,listType] = b.dataset.addFlavor.split('|');
+    STATE.modal={type:'flavorItemForm', data:{catId, listType, item:null}}; render();
+  });
+
+  document.querySelectorAll('[data-restock-ing]').forEach(b=> b.onclick=()=>{
+    const ing = DB.ingredients.find(x=>x.id===b.dataset.restockIng);
+    const n = +prompt(`Tambah stok "${ing.name}" sebanyak (${ing.unit}):`,'100');
+    if(n>0){ ing.stock+=n; save('ingredients'); renderTabContent(); }
+  });
+  document.querySelectorAll('[data-edit-ing]').forEach(b=> b.onclick=()=>{
+    const ing = DB.ingredients.find(x=>x.id===b.dataset.editIng);
+    STATE.modal={type:'ingredientForm', data:{item:ing}}; render();
+  });
+  document.querySelectorAll('[data-del-ing]').forEach(b=> b.onclick=()=>{
+    const ing = DB.ingredients.find(x=>x.id===b.dataset.delIng);
+    if(confirm(`Hapus bahan baku "${ing.name}"? Resep produk yang memakainya tidak akan otomatis diperbarui.`)){
+      DB.ingredients = DB.ingredients.filter(x=>x.id!==ing.id);
+      save('ingredients'); renderTabContent();
+    }
+  });
+  const addIngBtn = document.getElementById('addIngredientBtn');
+  if(addIngBtn) addIngBtn.onclick = ()=>{ STATE.modal={type:'ingredientForm', data:{item:null}}; render(); };
 }
 
 /* ============ SEWA & PELANGGAN ============ */
@@ -1067,6 +1592,70 @@ function attachSewaEvents(){
   if(addC) addC.onclick = ()=>{ STATE.modal={type:'customerForm',data:{}}; render(); };
 }
 
+/* ============ KAS MASUK / KELUAR ============ */
+function renderKas(){
+  const shift = getActiveShift(STATE.session.username);
+  const today = todayStr();
+  const todaysFlows = DB.cashFlows.filter(c=> new Date(c.timestamp).toISOString().slice(0,10)===today);
+  const kasMasukToday = todaysFlows.filter(c=>c.type==='in').reduce((s,c)=>s+c.amount,0);
+  const kasKeluarToday = todaysFlows.filter(c=>c.type==='out').reduce((s,c)=>s+c.amount,0);
+  const cats = STATE.kasType==='in' ? CASHIN_CATS : CASHOUT_CATS;
+  const catOpts = cats.map(c=>({value:c,label:c}));
+  const isOwner = STATE.session.role==='owner';
+  const visibleFlows = (isOwner ? DB.cashFlows : todaysFlows).slice().sort((a,b)=>b.timestamp-a.timestamp).slice(0,30);
+  return `
+  <h2 class="section-title">Kas Masuk / Keluar</h2>
+  <div class="stat-grid">
+    <div class="stat-card" style="border-left-color:var(--leaf)"><div class="lbl">Kas Masuk Hari Ini</div><div class="val" style="color:var(--leaf)">${rp(kasMasukToday)}</div></div>
+    <div class="stat-card" style="border-left-color:var(--chili)"><div class="lbl">Kas Keluar Hari Ini</div><div class="val" style="color:var(--chili)">${rp(kasKeluarToday)}</div></div>
+    <div class="stat-card"><div class="lbl">Saldo Bersih Hari Ini</div><div class="val">${rp(kasMasukToday-kasKeluarToday)}</div></div>
+  </div>
+  <div class="card" style="margin-bottom:16px">
+    <h3 style="margin-top:0">Catat Transaksi Kas</h3>
+    ${(!shift && !isOwner)? `<p style="font-size:12px;color:var(--ink-soft);margin-top:-6px">Catatan: kasir belum dibuka — entri ini akan dicatat tanpa terhubung ke shift manapun, dan tidak masuk perhitungan selisih kas saat tutup kasir.</p>`:''}
+    <div class="pill-row">
+      <button class="pill ${STATE.kasType==='out'?'active':''}" data-kastype="out">💸 Kas Keluar</button>
+      <button class="pill ${STATE.kasType==='in'?'active':''}" data-kastype="in">💰 Kas Masuk</button>
+    </div>
+    <div class="field"><label>Kategori</label>${dropdownHtml('kasCatDD', catOpts, catOpts[0]?catOpts[0].value:'')}</div>
+    <div class="field"><label>Jumlah (Rp)</label><input type="number" id="kasAmount" placeholder="0"></div>
+    <div class="field"><label>Keterangan</label><input id="kasNote" placeholder="cth: beli tepung tapioka 5kg"></div>
+    <button class="btn btn-primary" id="saveKasBtn">Simpan Transaksi</button>
+  </div>
+  <div class="card">
+    <h3 style="margin-top:0">${isOwner?'Riwayat Kas (Semua)':'Riwayat Kas Hari Ini'}</h3>
+    <div style="overflow-x:auto"><table>
+      <thead><tr><th>Waktu</th><th>Tipe</th><th>Kategori</th><th>Keterangan</th><th>Jumlah</th><th>Oleh</th></tr></thead>
+      <tbody>${visibleFlows.map(c=>`<tr>
+        <td>${fmtDateTime(c.timestamp)}</td>
+        <td><span class="badge-tag ${c.type==='in'?'tag-ok':'tag-active'}">${c.type==='in'?'Masuk':'Keluar'}</span></td>
+        <td>${c.category}</td><td>${c.note||'—'}</td>
+        <td style="color:${c.type==='in'?'var(--leaf)':'var(--chili)'};font-weight:700">${c.type==='in'?'+':'-'}${rp(c.amount)}</td>
+        <td>${c.name}</td>
+      </tr>`).join('') || '<tr><td colspan="6" style="color:var(--ink-soft)">Belum ada catatan.</td></tr>'}</tbody>
+    </table></div>
+  </div>`;
+}
+function attachKasEvents(){
+  initDropdown('kasCatDD');
+  document.querySelectorAll('[data-kastype]').forEach(b=> b.onclick=()=>{ STATE.kasType=b.dataset.kastype; renderTabContent(); });
+  const saveBtn = document.getElementById('saveKasBtn');
+  if(saveBtn) saveBtn.onclick = async ()=>{
+    const category = getDropdownValue('kasCatDD');
+    const amount = +document.getElementById('kasAmount').value||0;
+    const note = document.getElementById('kasNote').value.trim();
+    if(amount<=0){ alert('Jumlah harus lebih dari 0.'); return; }
+    const shift = getActiveShift(STATE.session.username);
+    DB.cashFlows.push({
+      id: uid('cf'), type: STATE.kasType, category, amount, note,
+      timestamp: Date.now(), username: STATE.session.username, name: STATE.session.name,
+      shiftId: shift? shift.id : null
+    });
+    await save('cashFlows');
+    renderTabContent();
+  };
+}
+
 /* ============ ABSEN ============ */
 function renderAbsen(){
   const today = todayStr();
@@ -1079,6 +1668,7 @@ function renderAbsen(){
     return `<tr><td>${fmtDate(a.date)}</td><td>${a.clockIn?fmtTime(a.clockIn):'—'}</td><td>${a.clockOut?fmtTime(a.clockOut):'—'}</td>
       <td>${a.clockOut? hrs.toFixed(1)+' jam':'sedang bertugas'}</td><td>${a.clockOut? rp(pay):'—'}</td></tr>`;
   }).join('');
+  const myShifts = DB.shifts.filter(s=>s.username===STATE.session.username && s.status==='closed').sort((a,b)=>b.closeTime-a.closeTime).slice(0,14);
   return `
   <h2 class="section-title">Absensi</h2>
   <div class="stat-grid">
@@ -1087,43 +1677,43 @@ function renderAbsen(){
     <div class="stat-card"><div class="lbl">Upah / Jam</div><div class="val" style="font-size:16px">${rp(staffInfo.hourlyRate)}</div></div>
   </div>
   <div class="card" style="margin-bottom:16px">
-    ${!todayRec ? `<button class="btn btn-primary" id="clockInBtn">🕒 Absen Masuk</button>` :
-      !todayRec.clockOut ? `<button class="btn btn-primary" id="clockOutBtn">🚪 Absen Pulang</button>` :
-      `<p style="color:var(--leaf);font-weight:700">✅ Absensi hari ini selesai. Sampai jumpa besok!</p>`}
+    <p style="font-size:13px;color:var(--ink-soft);margin:0">🔗 Absen sekarang otomatis mengikuti buka/tutup kasir di tab <strong>Kasir</strong> — buka kasir = absen masuk, tutup kasir = absen pulang. Tidak perlu absen manual lagi di sini.</p>
+    ${!todayRec ? `<p style="margin:10px 0 0;font-weight:700;color:var(--chili)">Kamu belum absen hari ini — buka kasir dulu di tab Kasir.</p>` :
+      !todayRec.clockOut ? `<p style="margin:10px 0 0;font-weight:700;color:var(--leaf)">🟢 Sedang bertugas sejak ${fmtTime(todayRec.clockIn)}.</p>` :
+      `<p style="margin:10px 0 0;color:var(--leaf);font-weight:700">✅ Absensi hari ini selesai. Sampai jumpa besok!</p>`}
   </div>
-  <div class="card">
+  <div class="card" style="margin-bottom:16px">
     <h3 style="margin-top:0">Riwayat Absensi</h3>
     <div style="overflow-x:auto"><table>
       <thead><tr><th>Tanggal</th><th>Masuk</th><th>Pulang</th><th>Durasi</th><th>Pendapatan</th></tr></thead>
       <tbody>${rows || '<tr><td colspan="5" style="color:var(--ink-soft)">Belum ada riwayat.</td></tr>'}</tbody>
     </table></div>
+  </div>
+  <div class="card">
+    <h3 style="margin-top:0">Riwayat Shift Kasir &amp; Komisi</h3>
+    <div style="overflow-x:auto"><table>
+      <thead><tr><th>Tanggal</th><th>Jam</th><th>Cup Terjual</th><th>Komisi</th></tr></thead>
+      <tbody>${myShifts.map(s=>`<tr><td>${fmtDate(s.openTime)}</td><td>${fmtTime(s.openTime)}–${fmtTime(s.closeTime)}</td><td>${s.cupsSold}</td><td style="color:${s.commission>0?'var(--leaf)':'inherit'};font-weight:${s.commission>0?'800':'400'}">${rp(s.commission)}</td></tr>`).join('') || '<tr><td colspan="4" style="color:var(--ink-soft)">Belum ada shift ditutup.</td></tr>'}</tbody>
+    </table></div>
+    <p style="font-size:11px;color:var(--ink-soft);margin-top:8px">Komisi cup minuman: Sen–Jum &gt;${WEEKDAY_CUP_THRESHOLD} cup/shift, Sab–Min &gt;${WEEKEND_CUP_THRESHOLD} cup/hari (gabungan shift) — ${rp(COMMISSION_PER_CUP)}/cup.</p>
   </div>`;
 }
 function attachAbsenEvents(){
-  const inBtn = document.getElementById('clockInBtn');
-  if(inBtn) inBtn.onclick = ()=>{
-    DB.attendance.push({id:uid('at'),username:STATE.session.username,name:STATE.session.name,date:todayStr(),clockIn:Date.now(),clockOut:null});
-    save('attendance'); renderTabContent();
-  };
-  const outBtn = document.getElementById('clockOutBtn');
-  if(outBtn) outBtn.onclick = ()=>{
-    const rec = DB.attendance.find(a=>a.username===STATE.session.username && a.date===todayStr());
-    rec.clockOut = Date.now();
-    save('attendance'); renderTabContent();
-  };
+  // absen kini sepenuhnya otomatis lewat buka/tutup kasir; tidak ada aksi manual di tab ini
 }
 
 /* ============ LAPORAN (owner) ============ */
 let salesChartInstance = null;
-function rangeFilter(range){
+function rangeFilterTS(range, ts){
   const now = new Date();
-  return t => {
-    const d = new Date(t.timestamp);
-    if(range==='today') return d.toDateString()===now.toDateString();
-    if(range==='week'){ const diff=(now-d)/86400000; return diff>=0 && diff<7; }
-    if(range==='month') return d.getMonth()===now.getMonth() && d.getFullYear()===now.getFullYear();
-    return true;
-  };
+  const d = new Date(ts);
+  if(range==='today') return d.toDateString()===now.toDateString();
+  if(range==='week'){ const diff=(now-d)/86400000; return diff>=0 && diff<7; }
+  if(range==='month') return d.getMonth()===now.getMonth() && d.getFullYear()===now.getFullYear();
+  return true;
+}
+function rangeFilter(range){
+  return t => rangeFilterTS(range, t.timestamp);
 }
 function renderLaporan(){
   const filtered = DB.transactions.filter(rangeFilter(STATE.reportRange));
@@ -1136,10 +1726,21 @@ function renderLaporan(){
   filtered.forEach(t=> t.items.forEach(it=>{ productAgg[it.name]=(productAgg[it.name]||0)+it.qty; }));
   const topProducts = Object.entries(productAgg).sort((a,b)=>b[1]-a[1]).slice(0,6);
 
+  const closedShifts = DB.shifts.filter(s=> s.status==='closed' && rangeFilterTS(STATE.reportRange, s.closeTime));
+
+  const flowsInRange = DB.cashFlows.filter(c=> rangeFilterTS(STATE.reportRange, c.timestamp));
+  const kasMasukTotal = flowsInRange.filter(c=>c.type==='in').reduce((s,c)=>s+c.amount,0);
+  const kasKeluarTotal = flowsInRange.filter(c=>c.type==='out').reduce((s,c)=>s+c.amount,0);
+  const cashSalesInRange = filtered.filter(t=>t.payment==='cash').reduce((s,t)=>s+t.total,0);
+  const netCashPosition = cashSalesInRange + kasMasukTotal - kasKeluarTotal;
+  const kasKeluarByCat = {};
+  flowsInRange.filter(c=>c.type==='out').forEach(c=>{ kasKeluarByCat[c.category]=(kasKeluarByCat[c.category]||0)+c.amount; });
+
   const staffPay = DB.staff.filter(s=>s.role==='staff').map(s=>{
     const recs = DB.attendance.filter(a=>a.username===s.username && a.clockOut && rangeFilter(STATE.reportRange)({timestamp:a.clockIn}));
     const hrs = recs.reduce((sum,a)=> sum+(a.clockOut-a.clockIn)/3600000,0);
-    return {name:s.name, hrs, pay:hrs*s.hourlyRate};
+    const komisi = closedShifts.filter(sh=>sh.username===s.username).reduce((sum,sh)=>sum+(sh.commission||0),0);
+    return {name:s.name, hrs, pay:hrs*s.hourlyRate, komisi};
   });
 
   return `
@@ -1161,10 +1762,47 @@ function renderLaporan(){
       <canvas id="topChart" height="220"></canvas>
     </div>
     <div class="card">
-      <h3 style="margin-top:0">Pendapatan Staff (per jam kerja)</h3>
-      <table><thead><tr><th>Staff</th><th>Jam</th><th>Pendapatan</th></tr></thead>
-      <tbody>${staffPay.map(s=>`<tr><td>${s.name}</td><td>${s.hrs.toFixed(1)}</td><td>${rp(s.pay)}</td></tr>`).join('') || '<tr><td colspan="3" style="color:var(--ink-soft)">Belum ada data.</td></tr>'}</tbody></table>
+      <h3 style="margin-top:0">Pendapatan &amp; Komisi Staff</h3>
+      <table><thead><tr><th>Staff</th><th>Jam</th><th>Gaji</th><th>Komisi</th><th>Total</th></tr></thead>
+      <tbody>${staffPay.map(s=>`<tr><td>${s.name}</td><td>${s.hrs.toFixed(1)}</td><td>${rp(s.pay)}</td><td>${rp(s.komisi)}</td><td><strong>${rp(s.pay+s.komisi)}</strong></td></tr>`).join('') || '<tr><td colspan="5" style="color:var(--ink-soft)">Belum ada data.</td></tr>'}</tbody></table>
+      <p style="font-size:11px;color:var(--ink-soft);margin-top:8px">Komisi: Sen–Jum &gt;${WEEKDAY_CUP_THRESHOLD} cup/shift, Sab–Min &gt;${WEEKEND_CUP_THRESHOLD} cup/hari — ${rp(COMMISSION_PER_CUP)}/cup.</p>
     </div>
+  </div>
+  <div class="card" style="margin-top:16px">
+    <h3 style="margin-top:0">Riwayat Buka/Tutup Kasir</h3>
+    <div style="overflow-x:auto"><table>
+      <thead><tr><th>Tanggal</th><th>Kasir</th><th>Jam</th><th>Pendapatan</th><th>Cup</th><th>Komisi</th><th>Selisih Kas</th></tr></thead>
+      <tbody>${closedShifts.slice().reverse().map(s=>`<tr>
+        <td>${fmtDate(s.openTime)}</td><td>${s.name}</td><td>${fmtTime(s.openTime)}–${fmtTime(s.closeTime)}</td>
+        <td>${rp(s.totalRevenue)}</td><td>${s.cupsSold}</td>
+        <td style="color:${s.commission>0?'var(--leaf)':'inherit'}">${rp(s.commission)}</td>
+        <td style="color:${s.cashVariance===0?'inherit':(s.cashVariance<0?'var(--chili)':'var(--turmeric)')}">${s.cashVariance===0?'Pas':(s.cashVariance>0?'+':'')+rp(s.cashVariance)}</td>
+      </tr>`).join('') || '<tr><td colspan="7" style="color:var(--ink-soft)">Belum ada shift ditutup pada rentang ini.</td></tr>'}</tbody>
+    </table></div>
+  </div>
+  <div class="card" style="margin-top:16px">
+    <h3 style="margin-top:0">💵 Arus Kas (Kas Masuk/Keluar Manual)</h3>
+    <div class="stat-grid" style="margin-bottom:10px">
+      <div class="stat-card" style="border-left-color:var(--leaf)"><div class="lbl">Total Kas Masuk</div><div class="val" style="color:var(--leaf);font-size:18px">${rp(kasMasukTotal)}</div></div>
+      <div class="stat-card" style="border-left-color:var(--chili)"><div class="lbl">Total Kas Keluar</div><div class="val" style="color:var(--chili);font-size:18px">${rp(kasKeluarTotal)}</div></div>
+      <div class="stat-card"><div class="lbl">Estimasi Kas Tunai di Laci</div><div class="val" style="font-size:18px">${rp(netCashPosition)}</div></div>
+    </div>
+    <p style="font-size:11px;color:var(--ink-soft);margin:0 0 10px">Estimasi kas tunai = penjualan tunai + kas masuk manual − kas keluar manual (belum termasuk kas awal shift yang sedang berjalan).</p>
+    ${Object.keys(kasKeluarByCat).length? `
+    <h4 style="margin:10px 0 6px;font-size:13px">Rincian Kas Keluar per Kategori</h4>
+    <table><thead><tr><th>Kategori</th><th>Jumlah</th></tr></thead>
+    <tbody>${Object.entries(kasKeluarByCat).sort((a,b)=>b[1]-a[1]).map(([cat,amt])=>`<tr><td>${cat}</td><td>${rp(amt)}</td></tr>`).join('')}</tbody></table>`:''}
+    <h4 style="margin:14px 0 6px;font-size:13px">Transaksi Kas Terbaru</h4>
+    <div style="overflow-x:auto"><table>
+      <thead><tr><th>Waktu</th><th>Tipe</th><th>Kategori</th><th>Keterangan</th><th>Jumlah</th><th>Oleh</th></tr></thead>
+      <tbody>${flowsInRange.slice().reverse().slice(0,15).map(c=>`<tr>
+        <td>${fmtDateTime(c.timestamp)}</td>
+        <td><span class="badge-tag ${c.type==='in'?'tag-ok':'tag-active'}">${c.type==='in'?'Masuk':'Keluar'}</span></td>
+        <td>${c.category}</td><td>${c.note||'—'}</td>
+        <td style="color:${c.type==='in'?'var(--leaf)':'var(--chili)'};font-weight:700">${c.type==='in'?'+':'-'}${rp(c.amount)}</td>
+        <td>${c.name}</td>
+      </tr>`).join('') || '<tr><td colspan="6" style="color:var(--ink-soft)">Belum ada catatan kas pada rentang ini.</td></tr>'}</tbody>
+    </table></div>
   </div>
   <div class="card" style="margin-top:16px">
     <h3 style="margin-top:0">Transaksi Terbaru</h3>
