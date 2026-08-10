@@ -877,7 +877,7 @@ function renderReceiptModal(){
     <div style="display:flex;justify-content:space-between;font-size:12px;color:var(--ink-soft)"><span>Metode</span><span>${t.payment.toUpperCase()}</span></div>
     ${t.payment==='cash'? `<div style="display:flex;justify-content:space-between;font-size:12px;color:var(--ink-soft)"><span>Kembalian</span><span>${rp(t.change)}</span></div>`:''}
   </div>
-  <p style="font-size:11px;color:var(--ink-soft);margin:8px 0 0">Struk sudah otomatis dikirim ke print dialog. Kalau tidak keluar dari mesin struk, klik cetak ulang di bawah.</p>
+  <p style="font-size:11px;color:var(--ink-soft);margin:8px 0 0">Struk dikirim ke printer Bluetooth. Kalau tidak keluar dari mesin struk, klik cetak ulang di bawah.</p>
   <div style="display:flex;gap:8px;margin-top:10px">
     <button class="btn btn-outline" id="printBtn">🖨️ Cetak Ulang Struk</button>
     <button class="btn btn-primary" id="closeReceiptBtn">Selesai</button>
@@ -1345,9 +1345,325 @@ async function finalizeCheckout(){
   doPrintReceipt(transaction);
 }
 
-function doPrintReceipt(t){
-  const area = document.getElementById('printArea');
-  area.innerHTML = `
+/* ============ PRINTING: ESC/POS + BLUETOOTH + FALLBACK ============ */
+const ESC = 0x1B, GS = 0x1D;
+function escCmd(...bytes){ return new Uint8Array(bytes); }
+function escText(s){ return new TextEncoder().encode(s); }
+function escConcat(parts){
+  const total = parts.reduce((s,p)=>s+p.length, 0);
+  const out = new Uint8Array(total);
+  let off = 0;
+  for(const p of parts){ out.set(p, off); off += p.length; }
+  return out;
+}
+
+function buildEscposReceipt(t){
+  const W = 36; // chars per line for 58mm (Font A: 12dots/char × 36 = 432dots ≈ 54mm)
+  const SEP = '-'.repeat(W);
+  const p = []; // parts array
+  const raw = s => p.push(escText(s));
+  const cmd = (...b) => p.push(escCmd(...b));
+  const line = (l,r) => {
+    const gap = Math.max(1, W - l.length - r.length);
+    raw(l + ' '.repeat(gap) + r + '\n');
+  };
+  const itemLine = (label, amount) => {
+    // Strip common prefix like "Rp" from amount to save space
+    const amt = rp(amount);
+    line(label, amt);
+  };
+
+  // Init
+  cmd(ESC, 0x40); // ESC @ – initialize
+
+  // Header – center, double size, bold
+  cmd(ESC, 0x61, 1);   // center
+  cmd(ESC, 0x21, 0x30); // double H + double W
+  cmd(ESC, 0x45, 1);    // bold
+  raw('MUNCHIE\n');
+  cmd(ESC, 0x21, 0x00); // normal
+  cmd(ESC, 0x45, 0);    // bold off
+  raw('bites . drinks . treats\n');
+  raw(fmtDateTime(t.timestamp) + '\n');
+
+  // Info
+  cmd(ESC, 0x61, 0); // left align
+  raw(SEP + '\n');
+  raw('No  : ' + t.id + '\n');
+  raw('Kasir: ' + t.cashier + '\n');
+  raw(SEP + '\n');
+
+  // Items
+  t.items.forEach(it => {
+    const left = it.qty + 'x ' + it.name;
+    const right = rp(it.subtotal);
+    line(left, right);
+    if(it.meta){
+      // Word-wrap meta: prefer breaking at · or , before breaking at space
+      const wrapW = W - 2;
+      let rem = it.meta;
+      while(rem.length > 0){
+        if(rem.length <= wrapW){
+          raw('  ' + rem + '\n');
+          break;
+        }
+        // Priority: break at · (group separator), then , (item separator), then space
+        let cut = wrapW;
+        const bullet = rem.lastIndexOf('· ', wrapW); // ·
+        const comma  = rem.lastIndexOf(', ', wrapW);
+        const space  = rem.lastIndexOf(' ', wrapW);
+        if(bullet > wrapW / 2) cut = bullet + 1; // break after ·
+        else if(comma > wrapW / 2) cut = comma + 1; // break after ,
+        else if(space > wrapW / 2) cut = space;
+        raw('  ' + rem.slice(0, cut).trimEnd() + '\n');
+        rem = rem.slice(cut).trimStart();
+      }
+    }
+  });
+
+  raw(SEP + '\n');
+
+  // Total – bold
+  cmd(ESC, 0x45, 1);
+  line('TOTAL', rp(t.total));
+  cmd(ESC, 0x45, 0);
+
+  // Payment
+  const payMethod = t.payment.toUpperCase();
+  const payAmt = t.payment === 'cash' ? rp(t.total + t.change) : rp(t.total);
+  line('Bayar (' + payMethod + ')', payAmt);
+  if(t.payment === 'cash'){
+    line('Kembali', rp(t.change));
+  }
+
+  raw(SEP + '\n');
+
+  // Footer – center
+  cmd(ESC, 0x61, 1);
+  raw('Terima kasih!\n');
+  raw('\n\n\n\n\n\n'); // 6 line feeds for tear-off space
+  cmd(GS, 0x56, 1); // GS V 1 – partial cut (most compatible)
+
+  return escConcat(p);
+}
+
+async function printViaBluetooth(t){
+  if(!navigator.bluetooth) throw new Error('Bluetooth not available');
+
+  // Common SPP UUIDs for thermal printers
+  const SPP_SERVICE = '00001101-0000-1000-8000-00805f9b34fb';
+  const WRITE_CHAR  = '00002af1-0000-1000-8000-00805f9b34fb';
+
+  const device = await navigator.bluetooth.requestDevice({
+    acceptAllDevices: true,
+    optionalServices: [SPP_SERVICE]
+  });
+
+  const server = await device.gatt.connect();
+  let service, characteristic;
+
+  // Try SPP service first, fallback to first available
+  try {
+    service = await server.getPrimaryService(SPP_SERVICE);
+  } catch(e){
+    // Some printers don't expose SPP UUID; try to get any service
+    const services = await server.getPrimaryServices();
+    if(!services.length) throw new Error('No GATT services found on printer');
+    service = services[0];
+  }
+
+  // Find writable characteristic
+  const chars = await service.getCharacteristics();
+  characteristic = chars.find(c => c.properties.write || c.properties.writeWithoutResponse);
+  if(!characteristic) throw new Error('No writable characteristic found on printer');
+
+  const data = buildEscposReceipt(t);
+  const CHUNK = 20; // minimum BLE packet size — most reliable across all printers
+  const delay = ms => new Promise(r => setTimeout(r, ms));
+
+  console.log('ESC/POS sending', data.byteLength, 'bytes in', Math.ceil(data.byteLength/CHUNK), 'chunks');
+
+  // Send with conservative pacing for low-buffer BLE printers
+  let sent = 0;
+  for(let i = 0; i < data.byteLength; i += CHUNK){
+    const chunk = data.slice(i, Math.min(i + CHUNK, data.byteLength));
+    try {
+      await characteristic.writeValueWithResponse(chunk);
+    } catch(e){
+      // Fallback to unacknowledged write, but log warning
+      console.warn('writeValueWithResponse failed at byte', i, '- falling back to writeWithoutResponse');
+      await characteristic.writeValueWithoutResponse(chunk);
+    }
+    sent += chunk.byteLength;
+    await delay(120);
+  }
+
+  console.log('All', sent, 'bytes sent, waiting for printer...');
+
+  // Long pause to let printer finish processing before disconnect
+  await delay(1200);
+  await device.gatt.disconnect();
+  return true;
+}
+
+function renderReceiptToCanvas(t){
+  const W = 230; // ~58mm in px
+  const scale = 2; // retina
+  const font = '12px monospace';
+  const lineH = 20;
+  const pad = 12;
+
+  // Measure content height
+  const measureCtx = document.createElement('canvas').getContext('2d');
+  measureCtx.font = font;
+  let lines = 0;
+  const addLines = n => { lines += n; };
+
+  addLines(2); // header
+  addLines(1); // sub
+  addLines(1); // date
+  addLines(1); // sep
+  addLines(2); // no, kasir
+  addLines(1); // sep
+  t.items.forEach(it => {
+    addLines(1);
+    if(it.meta) addLines(1);
+  });
+  addLines(1); // sep
+  addLines(1); // total
+  addLines(1); // bayar
+  if(t.payment==='cash') addLines(1); // kembali
+  addLines(1); // sep
+  addLines(1); // thanks
+  addLines(2); // feed
+
+  const H = lines * lineH + pad * 2;
+
+  // Draw
+  const canvas = document.createElement('canvas');
+  canvas.width = W * scale;
+  canvas.height = H * scale;
+  const ctx = canvas.getContext('2d');
+  ctx.scale(scale, scale);
+  ctx.fillStyle = '#fff';
+  ctx.fillRect(0, 0, W, H);
+  ctx.fillStyle = '#000';
+  ctx.font = font;
+  ctx.textBaseline = 'top';
+
+  let y = pad;
+
+  // Helper
+  const drawLine = (text, opts={}) => {
+    if(opts.center){
+      ctx.textAlign = 'center';
+      ctx.fillText(text, W/2, y);
+      ctx.textAlign = 'left';
+    } else if(opts.right){
+      ctx.textAlign = 'right';
+      ctx.fillText(text, W - pad, y);
+      ctx.textAlign = 'left';
+    } else {
+      ctx.fillText(text, pad, y);
+    }
+    y += lineH;
+  };
+  const drawRow = (l, r) => {
+    ctx.textAlign = 'left';
+    ctx.fillText(l, pad, y);
+    ctx.textAlign = 'right';
+    ctx.fillText(r, W - pad, y);
+    ctx.textAlign = 'left';
+    y += lineH;
+  };
+  const drawSep = () => {
+    const sepY = y + lineH/2;
+    ctx.beginPath();
+    ctx.setLineDash([4, 4]);
+    ctx.moveTo(pad, sepY);
+    ctx.lineTo(W - pad, sepY);
+    ctx.stroke();
+    ctx.setLineDash([]);
+    y += lineH;
+  };
+
+  // Header
+  ctx.font = 'bold 16px monospace';
+  drawLine('MUNCHIE', {center:true});
+  ctx.font = font;
+  drawLine('bites . drinks . treats', {center:true});
+  drawLine(fmtDateTime(t.timestamp), {center:true});
+  drawSep();
+  drawLine('No  : ' + t.id);
+  drawLine('Kasir: ' + t.cashier);
+  drawSep();
+
+  // Items
+  t.items.forEach(it => {
+    drawRow(it.qty + 'x ' + it.name, rp(it.subtotal));
+    if(it.meta){
+      // Wrap meta text to fit within canvas width
+      const maxW = W - pad * 2 - 12; // 12px reserved for indent
+      const words = it.meta.split(' ');
+      let curLine = '';
+      for(const word of words){
+        const test = curLine ? curLine + ' ' + word : word;
+        if(ctx.measureText(test).width > maxW && curLine){
+          drawLine('  ' + curLine);
+          curLine = word;
+        } else {
+          curLine = test;
+        }
+      }
+      if(curLine) drawLine('  ' + curLine);
+    }
+  });
+  drawSep();
+
+  // Total
+  ctx.font = 'bold 13px monospace';
+  drawRow('TOTAL', rp(t.total));
+  ctx.font = font;
+
+  // Payment
+  const payAmt = t.payment==='cash' ? rp(t.total + t.change) : rp(t.total);
+  drawRow('Bayar (' + t.payment.toUpperCase() + ')', payAmt);
+  if(t.payment==='cash') drawRow('Kembali', rp(t.change));
+  drawSep();
+
+  // Footer
+  drawLine('Terima kasih!', {center:true});
+
+  return canvas;
+}
+
+async function shareReceiptImage(t, fallbackPrint){
+  try {
+    const canvas = renderReceiptToCanvas(t);
+    const blob = await new Promise(res => canvas.toBlob(res, 'image/png'));
+
+    // Try Web Share API (mobile)
+    if(navigator.share && navigator.canShare){
+      const file = new File([blob], 'struk-'+t.id+'.png', {type:'image/png'});
+      const shareData = { title:'Struk Munchie', files:[file] };
+      if(navigator.canShare(shareData)){
+        await navigator.share(shareData);
+        return;
+      }
+      // Fallback: share just the URL/text
+      await navigator.share({ title:'Struk Munchie', text:'Struk '+t.id+' - Total: '+rp(t.total) });
+      return;
+    }
+  } catch(e){
+    // User cancelled share or share not available
+    if(e && e.name === 'AbortError') return; // user cancelled, not an error
+  }
+  // Desktop / last resort: popup + window.print()
+  if(fallbackPrint) fallbackPrint();
+}
+
+async function doPrintReceipt(t){
+  const content = `
     <div class="center"><strong>MUNCHIE</strong><br>bites &middot; drinks &middot; treats<br>${fmtDateTime(t.timestamp)}</div>
     <hr>
     <div>No: ${t.id}<br>Kasir: ${t.cashier}</div>
@@ -1360,9 +1676,54 @@ function doPrintReceipt(t){
     <hr>
     <div class="center">Terima kasih! 🌶️</div>
   `;
-  document.body.classList.add('print-mode');
-  window.print();
-  setTimeout(()=> document.body.classList.remove('print-mode'), 500);
+
+  // Popup fallback function (desktop / last resort)
+  const popupPrint = () => {
+    const w = window.open('', '_printReceipt', 'width=226,height=400,left=100,top=100');
+    if(!w){
+      const area = document.getElementById('printArea');
+      area.innerHTML = content;
+      document.body.classList.add('print-mode');
+      window.print();
+      setTimeout(()=> document.body.classList.remove('print-mode'), 500);
+      return;
+    }
+    w.document.write(`<!DOCTYPE html>
+<html><head><meta charset="UTF-8"><title>Struk Munchie</title>
+<style>
+  @page{size:58mm 120mm;margin:0}
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{width:58mm;margin:0;padding:2mm;font-family:'Courier New',monospace;font-size:11px;line-height:1.35;color:#000;background:#fff;overflow:hidden}
+  .center{text-align:center}
+  hr{border:none;border-top:1px dashed #000;margin:3px 0}
+  .row{display:flex;justify-content:space-between}
+  @media print{
+    @page{size:58mm 120mm;margin:0}
+    html,body{width:58mm;margin:0;padding:2mm;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+  }
+</style></head>
+<body>${content}</body></html>`);
+    w.document.close();
+    w.focus();
+    setTimeout(()=>{
+      w.print();
+      w.onafterprint = ()=>{ w.close(); };
+      setTimeout(()=>{ try{w.close();}catch(e){} }, 120000);
+    }, 300);
+  };
+
+  // 1. Try Bluetooth ESC/POS (Android Chrome)
+  if(navigator.bluetooth){
+    try {
+      await printViaBluetooth(t);
+      return; // success, done
+    } catch(e){
+      console.warn('Bluetooth print failed, falling back:', e.message);
+    }
+  }
+
+  // 2. Try share image (iOS / mobile)
+  await shareReceiptImage(t, popupPrint);
 }
 
 /* ============ INVENTORI ============ */
