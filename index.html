@@ -173,6 +173,24 @@ tr:hover td{background:#FFFBF3}
 .notif-banner{background:#FDEAEA;border:2px solid var(--chili);border-radius:12px;padding:12px 14px;margin-bottom:14px;display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap}
 .timer-chip{font-family:'Baloo 2';font-weight:700}
 
+/* ---- receipt preview ---- */
+.rcpt-preview-wrap{
+  margin-top:12px; display:flex; justify-content:center;
+}
+.rcpt-preview{
+  width:220px; max-height:260px; overflow-y:auto;
+  background:#FFFEF9; border:1px solid #E0D5C0; border-radius:6px;
+  padding:8px 10px; font-family:'Courier New',monospace;
+  font-size:9.5px; line-height:1.35; color:#2B2118;
+  box-shadow:inset 0 0 8px rgba(0,0,0,.04);
+}
+.rcpt-preview .rc{text-align:center}
+.rcpt-preview .rr{display:flex;justify-content:space-between}
+.rcpt-preview hr{border:none;border-top:1px dashed #B8A890;margin:4px 0}
+.rcpt-preview .rm{font-size:9.5px;padding-left:6px;color:#5A4D3E}
+.rcpt-preview .rb{font-weight:700}
+.rcpt-preview .rt{font-size:12px;font-weight:700;margin-bottom:2px}
+
 @media print{
   @page{ size: 58mm auto; margin: 0; }
   body.print-mode > *{display:none !important}
@@ -596,7 +614,10 @@ function renderKasir(){
       </div>
     </div>
     <div class="cart-panel card">
-      <h3 style="margin:0">🧾 Pesanan</h3>
+      <div style="display:flex;justify-content:space-between;align-items:center">
+        <h3 style="margin:0">🧾 Pesanan</h3>
+        ${STATE.cart.length? `<button class="btn btn-sm btn-outline" id="previewStrukBtn" style="font-size:11px;padding:4px 8px">🖨️ Preview</button>` : ''}
+      </div>
       <div class="cart-list" id="cartList">
         ${STATE.cart.length? STATE.cart.map((c,i)=>renderCartItem(c,i)).join('') : '<p style="color:var(--ink-soft);font-size:13px;padding:16px 0;text-align:center">Keranjang kosong. Pilih produk di sebelah kiri.</p>'}
       </div>
@@ -625,6 +646,62 @@ function renderCartItem(c,i){
   </div>`;
 }
 function cartTotal(){ return STATE.cart.reduce((s,c)=>s+c.subtotal,0); }
+
+function renderReceiptPreviewModal(){
+  if(!STATE.modal || STATE.modal.type!=='receiptPreview') return '';
+  const W = 36; // match ESC/POS width
+  const topBot = '▔'.repeat(W);
+  let html = '';
+  html += '<div class="rc">'+topBot+'</div>';
+  html += `<div class="rc"><span class="rt">MUNCHIE</span></div>`;
+  html += `<div class="rc">bites · drinks · treats</div>`;
+  html += `<div class="rc">${fmtDateTime(Date.now())}</div>`;
+  html += `<hr>`;
+  html += `<div>No  : PREVIEW</div>`;
+  html += `<div>Kasir: ${STATE.session?STATE.session.name:'—'}</div>`;
+  html += `<hr>`;
+  STATE.cart.forEach(c => {
+    html += `<div class="rr"><span>${c.qty}x ${c.name}</span><span>${rp(c.subtotal)}</span></div>`;
+    if(c.meta){
+      const ww = W - 2;
+      let rem = c.meta;
+      while(rem.length > 0){
+        if(rem.length <= ww){ html += `<div class="rm">${rem}</div>`; break; }
+        let cut = ww;
+        const bullet = rem.lastIndexOf('· ', ww);
+        const comma  = rem.lastIndexOf(', ', ww);
+        const space  = rem.lastIndexOf(' ', ww);
+        if(bullet > ww/2) cut = bullet + 1;
+        else if(comma > ww/2) cut = comma + 1;
+        else if(space > ww/2) cut = space;
+        html += `<div class="rm">${rem.slice(0,cut).trimEnd()}</div>`;
+        rem = rem.slice(cut).trimStart();
+      }
+    }
+  });
+  html += `<hr>`;
+  html += `<div class="rr rb"><span>TOTAL</span><span>${rp(cartTotal())}</span></div>`;
+  html += `<hr>`;
+  html += `<div class="rc">Terima kasih! 🌶️</div>`;
+  html += '<div class="rc">'+topBot+'</div>';
+
+  return `
+  <div class="overlay" id="modalOverlay">
+    <div class="modal" style="max-width:290px;padding:14px">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+        <h3 style="margin:0;font-size:15px">🖨️ Preview Struk 58mm</h3>
+        <div style="display:flex;gap:6px">
+          <button class="btn btn-sm btn-primary" id="printFromPreviewBtn" style="font-size:11px;padding:4px 10px">🖨️ Cetak</button>
+          <button class="btn btn-sm btn-outline" id="closePreviewBtn">✕</button>
+        </div>
+      </div>
+      <div class="rcpt-preview" style="width:100%;max-height:55vh;overflow-y:auto">
+        ${html}
+      </div>
+      <p style="font-size:10px;color:var(--ink-soft);margin:8px 0 0;text-align:center">Ini preview — hasil di kertas thermal akan sama persis</p>
+    </div>
+  </div>`;
+}
 
 /* ============ SHIFT / BUKA-TUTUP KASIR ============ */
 const COMMISSION_PER_CUP = 1000;
@@ -697,6 +774,8 @@ function attachKasirEvents(){
   if(chk) chk.onclick = ()=> openCheckoutModal();
   const clr = document.getElementById('clearCartBtn');
   if(clr) clr.onclick = ()=>{ STATE.cart=[]; renderTabContent(); };
+  const pv = document.getElementById('previewStrukBtn');
+  if(pv) pv.onclick = ()=>{ STATE.modal={type:'receiptPreview'}; renderModal(); };
 }
 function bumpQty(i,delta){
   const item = STATE.cart[i];
@@ -741,7 +820,14 @@ function renderModal(){
   else if(STATE.modal.type==='shiftClose') inner = renderShiftCloseModal();
   else if(STATE.modal.type==='flavorItemForm') inner = renderFlavorItemFormModal();
   else if(STATE.modal.type==='ingredientForm') inner = renderIngredientFormModal();
-  overlayHtml.innerHTML = `<div class="modal">${inner}</div>`;
+  else if(STATE.modal.type==='receiptPreview') inner = renderReceiptPreviewModal();
+  overlayHtml.innerHTML = `<div class="modal"><div style="display:none">${inner}</div></div>`;
+  // receiptPreview renders its own full overlay, handle it separately
+  if(STATE.modal.type==='receiptPreview'){
+    overlayHtml.innerHTML = inner;
+  } else {
+    overlayHtml.innerHTML = `<div class="modal">${inner}</div>`;
+  }
   document.body.appendChild(overlayHtml);
   overlayHtml.addEventListener('click', e=>{ if(e.target.id==='modalOverlay'){ STATE.modal=null; closeModalDom(); }});
   attachModalEvents();
@@ -1096,6 +1182,18 @@ function attachModalEvents(){
       updateChange();
     }
     document.getElementById('confirmPayBtn').onclick = ()=> finalizeCheckout();
+  }
+  if(STATE.modal.type==='receiptPreview'){
+    const cp = document.getElementById('closePreviewBtn');
+    if(cp) cp.onclick = ()=>{ STATE.modal=null; closeModalDom(); };
+    const pp = document.getElementById('printFromPreviewBtn');
+    if(pp) pp.onclick = ()=>{
+      const t = {
+        id: 'TRX-PREVIEW', timestamp: Date.now(), cashier: STATE.session?STATE.session.name:'—',
+        items: STATE.cart, total: cartTotal(), payment: 'cash', change: 0
+      };
+      doPrintReceipt(t);
+    };
   }
   if(STATE.modal.type==='receipt'){
     document.getElementById('printBtn').onclick = ()=> doPrintReceipt(STATE.modal.data.transaction);
